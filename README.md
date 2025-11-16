@@ -36,16 +36,15 @@ backend = AsyncRedisBackend(redis_client)
 # backend = InMemoryBackend()
 
 rules = {
+    "/api/": {"limit": 60, "period": 60},
     "/api/users": {"limit": 1, "period": 2},
-    "/api/": {"limit": 60, "period": 60}, # GLOBAL ONES GO LAST
 }
 
 app.add_middleware(
     RateLimiterMiddleware,
     rules=rules,
     backend=backend,
-    backoff_threshold=3,
-    max_backoff=60
+    trusted_proxies=["127.0.0.1"]
 )
 ```
 
