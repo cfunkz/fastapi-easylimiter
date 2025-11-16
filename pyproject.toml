@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastapi-easylimiter"
-version = "0.1.7"
+version = "0.1.8"
 description = "High-performance async rate limiter for FastAPI with Redis or native in-memory backend"
 readme = "README.md"
 license = { file = "LICENSE" }
