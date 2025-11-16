@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=65", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-easylimiter"
+version = "0.1.7"
+description = "High-performance async rate limiter for FastAPI with Redis or native in-memory backend"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+
+authors = [
+    { name = "cfunkz", email = "cfunkz@duck.com" }
+]
+
+dependencies = [
+    "fastapi>=0.110",
+    "starlette>=0.36",
+    "redis>=5.0.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/cfunkz/fastapi-easylimiter"
+Documentation = "https://github.com/cfunkz/fastapi-easylimiter"
+Source = "https://github.com/cfunkz/fastapi-easylimiter"
+Issues = "https://github.com/cfunkz/fastapi-easylimiter/issues"
+
+[tool.setuptools.packages.find]
+include = ["fastapi_easylimiter*"]
