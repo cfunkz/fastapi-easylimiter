@@ -1,5 +1,3 @@
-# fastapi_ultrafast_ratelimiter.py
-
 import asyncio
 from time import time
 from typing import Optional, Callable, Dict
@@ -169,4 +167,5 @@ class RateLimiterMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
+
 # ----------------------------
