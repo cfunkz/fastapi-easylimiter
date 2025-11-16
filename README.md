@@ -7,7 +7,7 @@ Simple async rate-limiting middleware for FastAPI with Redis or in-memory cachin
 - Async rate limiting
 - Redis or in-memory cache
 - Easy rules per URL paths.
-- Optional rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `Retry-After`)
+- Proxy Aware
 
 ## Installation
 
@@ -53,5 +53,6 @@ Contributions and forks are always welcome!
 Feel free to adapt, improve, or extend this middleware for your own needs. This was purely made out of personal necessity.
 
 ## Support
+
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
