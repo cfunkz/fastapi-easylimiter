@@ -47,8 +47,8 @@ backend = AsyncRedisBackend(redis_client)
 # backend = InMemoryBackend()
 
 rules = {
-    "/api/users": {"limit": 1, "period": 2},
     "/api/": {"limit": 60, "period": 60},
+    "/api/users": {"limit": 1, "period": 2},
 }
 
 app.add_middleware(
@@ -78,6 +78,3 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
-
-
-
