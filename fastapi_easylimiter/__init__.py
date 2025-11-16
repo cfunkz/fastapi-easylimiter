@@ -83,17 +83,23 @@ class InMemoryBackend:
         async with await self._lock(key):
             count, expire_at = self.store.get(key, (0, 0.0))
 
+            # Window expired → reset
             if expire_at and now >= expire_at:
-                count, expire_at = 0, 0.0
+                count = 0
+                expire_at = 0.0
 
             count += 1
-            if period:
+
+            # Only set expiry when count == 1
+            if count == 1:
                 expire_at = now + period
 
             self.store[key] = (count, expire_at)
-            ttl = max(int(expire_at - now), 0) if expire_at else period
+
+            ttl = max(int(expire_at - now), 0)
 
             return count, ttl
+
 
     async def _cleanup_loop(self):
         while True:
@@ -105,7 +111,7 @@ class InMemoryBackend:
                 self.locks.pop(k, None)
 
 # -----------------------------
-# RateLimiter Middleware
+# High-Performance RateLimiter Middleware
 # -----------------------------
 class RateLimiterMiddleware:
     def __init__(
