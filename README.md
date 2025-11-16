@@ -10,7 +10,7 @@ Simple ASGI async rate-limiting middleware for FastAPI with Redis or in-memory c
   - In-Memory (single worker dev)
 - Path Based Rules
 - Multi-rule prefix matching
-  - Can do global ratelimits and per-route
+  - Capable of global rate-limits and per-route
 - Standard rate-limit headers
   - X-RateLimit-Limit
   - X-RateLimit-Remaining
