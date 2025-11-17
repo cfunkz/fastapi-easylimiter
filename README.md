@@ -24,7 +24,7 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
   - Uses `'X-Forwarded-For'` only when the sender is trusted
   - Rejects spoofed XFF headers
   - Uses `'CF-Connecting-IP'` when trusted requests pass through Cloudflare
-  - Falls back to ASGI scope["client"] if no trusted headers exist
+  - Falls back to ASGI `scope["client"]` if no trusted headers exist
 - Zero Dependencies Beyond Redis Client
   - Starlette-style ASGI middleware
 
@@ -106,6 +106,7 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+
 
 
 
