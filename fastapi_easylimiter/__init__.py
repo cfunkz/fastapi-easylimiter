@@ -38,16 +38,28 @@ class AsyncRedisBackend:
     if count == 1 then redis.call('EXPIRE', key, period) end
     local ttl = redis.call('TTL', key)
     if ttl < 0 then ttl = period end
-    return cjson.encode({count, ttl})
+    return count .. ":" .. ttl
     """
+
     def __init__(self, redis_client: redis_async.Redis):
         self.redis = redis_client
         self.script = redis_client.register_script(self.LUA_SCRIPT)
 
     async def incr(self, key: str, limit: int, period: int) -> Tuple[int, int]:
-        raw = await self.script(keys=[key], args=[limit, period])
-        data = json.loads(raw)
-        return int(data[0]), int(data[1])
+        try:
+            raw = await asyncio.wait_for(
+                self.script(keys=[key], args=[limit, period]), timeout=0.05
+            )
+            # Safely handle bytes or str
+            if isinstance(raw, (bytes, bytearray)):
+                raw = raw.decode()
+            parts = raw.split(":", 1)
+            if len(parts) != 2:
+                raise ValueError(f"Invalid Redis Lua return: {raw!r}")
+            return int(parts[0]), int(parts[1])
+        except Exception:
+            # Fail-open: Redis down → allow request (secure default)
+            return 0, 0
 
 # -----------------------------
 # In-Memory Backend (Dev Only)
