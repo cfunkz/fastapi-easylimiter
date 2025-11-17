@@ -1,4 +1,10 @@
-# fastapi-easylimiter
+# fastapi‑easylimiter
+
+[![GitHub stars](https://img.shields.io/github/stars/cfunkz/fastapi‑easylimiter?style=social)](https://github.com/cfunkz/fastapi‑easylimiter/stargazers)  
+[![GitHub forks](https://img.shields.io/github/forks/cfunkz/fastapi‑easylimiter?style=social)](https://github.com/cfunkz/fastapi‑easylimiter/network/members)  
+[![GitHub issues](https://img.shields.io/github/issues/cfunkz/fastapi‑easylimiter)](https://github.com/cfunkz/fastapi‑easylimiter/issues)  
+[![GitHub license](https://img.shields.io/github/license/cfunkz/fastapi‑easylimiter)](https://github.com/cfunkz/fastapi‑easylimiter/blob/main/LICENSE)
+
 
 Simple ASGI async rate-limiting middleware for FastAPI with Redis or in-memory caching. Designed to handle auto-generated routes (such as those provided by FastAPI-Users) without requiring decorators.
 
