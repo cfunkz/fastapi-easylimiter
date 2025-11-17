@@ -6,7 +6,7 @@
 Simple ASGI async rate-limiting middleware for FastAPI with Redis or in-memory caching. Designed to handle auto-generated routes (such as those provided by FastAPI-Users) without requiring decorators.
 
 
-## Simple design
+## Features
 - Async rate limiting
 - Cache
   - Redis
@@ -106,6 +106,7 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+
 
 
 
