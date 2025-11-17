@@ -78,7 +78,7 @@ Both rules count independently.
 
 If ANY rule is exceeded → request becomes 429.
 
-Uses Atomic LUA script:
+**Uses Atomic LUA script:**
 
 ```lua
 local count = redis.call('INCR', key)
@@ -106,6 +106,7 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+
 
 
 
