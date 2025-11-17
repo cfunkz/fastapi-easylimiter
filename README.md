@@ -24,7 +24,10 @@ Simple ASGI async rate-limiting middleware for FastAPI with Redis or in-memory c
   - Rejects spoofed XFF headers
   - Uses `'CF-Connecting-IP'` when trusted requests pass through Cloudflare
   - Falls back to ASGI scope["client"] if no trusted headers exist
+- Zero Dependencies Beyond Redis Client
+  - Starlette-style ASGI middleware
 
+ 
 ## Installation
 
 ```bash
@@ -75,6 +78,28 @@ Both rules count independently.
 
 If ANY rule is exceeded → request becomes 429.
 
+Uses Atomic LUA script:
+
+```python
+local count = redis.call('INCR', key)
+if count == 1 then redis.call('EXPIRE', key, period) end
+```
+
+Keys follow the pattern:
+```python
+rl:{client_ip}:{prefix}
+```
+Which in saved as `rl:203.0.113.5:/api`
+
+
+| Parameter         | Type                      | Description                                 |
+| ----------------- | ------------------------- | ------------------------------------------- |
+| `app`             | ASGIApp                   | FastAPI/ASGI app                            |
+| `rules`           | dict                      | `{ prefix: {"limit": int, "period": int} }` |
+| `backend`         | Redis or InMemory backend | Rate-limit storage                          |
+| `trusted_proxies` | list[str]                 | Proxies allowed to send real client IP      |
+
+
 ## Contributing
 Contributions and forks are always welcome!
 Feel free to adapt, improve, or extend this middleware for your own needs. This was purely made out of personal necessity.
@@ -84,5 +109,6 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+
 
 
