@@ -37,8 +37,8 @@ class AsyncRedisBackend:
     local count = redis.call('INCR', key)
     if count == 1 then redis.call('EXPIRE', key, period) end
     local ttl = redis.call('TTL', key)
-    if ttl < 0 then ttl = period end
-    return cjson.encode({count, ttl})
+    if ttl == -1 then ttl = period end
+    return count .. ":" .. ttl
     """
     def __init__(self, redis_client: redis_async.Redis):
         self.redis = redis_client
