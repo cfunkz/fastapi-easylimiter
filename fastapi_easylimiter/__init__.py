@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import Dict, Optional, List, Tuple
 from starlette.types import ASGIApp, Scope, Receive, Send
 from starlette.responses import JSONResponse
@@ -46,8 +45,8 @@ class AsyncRedisBackend:
 
     async def incr(self, key: str, limit: int, period: int) -> Tuple[int, int]:
         raw = await self.script(keys=[key], args=[limit, period])
-        data = json.loads(raw)
-        return int(data[0]), int(data[1])
+        count_str, ttl_str = raw.split(':')        # ← Fixed line
+        return int(count_str), int(ttl_str)
 
 # -----------------------------
 # In-Memory Backend (Dev Only)
