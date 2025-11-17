@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Dict, Optional, List, Tuple
 from starlette.types import ASGIApp, Scope, Receive, Send
 from starlette.responses import JSONResponse
@@ -36,8 +37,8 @@ class AsyncRedisBackend:
     local count = redis.call('INCR', key)
     if count == 1 then redis.call('EXPIRE', key, period) end
     local ttl = redis.call('TTL', key)
-    if ttl == -1 then ttl = period end
-    return count .. ":" .. ttl
+    if ttl < 0 then ttl = period end
+    return cjson.encode({count, ttl})
     """
     def __init__(self, redis_client: redis_async.Redis):
         self.redis = redis_client
@@ -45,8 +46,8 @@ class AsyncRedisBackend:
 
     async def incr(self, key: str, limit: int, period: int) -> Tuple[int, int]:
         raw = await self.script(keys=[key], args=[limit, period])
-        count_str, ttl_str = raw.split(':')        # ← Fixed line
-        return int(count_str), int(ttl_str)
+        data = json.loads(raw)
+        return int(data[0]), int(data[1])
 
 # -----------------------------
 # In-Memory Backend (Dev Only)
