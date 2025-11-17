@@ -85,8 +85,7 @@ local count = redis.call('INCR', key)
 if count == 1 then redis.call('EXPIRE', key, period) end
 ```
 
-Keys follow the pattern - `rl:{client_ip}:{prefix}`
-Which is saved as `rl:203.0.113.5:/api`
+Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0.113.5:/api`
 
 
 | Parameter         | Type                      | Description                                 |
@@ -106,6 +105,7 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+
 
 
 
