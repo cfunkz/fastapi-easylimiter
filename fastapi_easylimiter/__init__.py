@@ -25,27 +25,59 @@ from typing import Dict, Optional, List, Tuple
 from starlette.types import ASGIApp, Scope, Receive, Send
 from starlette.responses import JSONResponse
 import redis.asyncio as redis_async
+import ipaddress
 
 # -----------------------------
-# Proxy IP Extractor
+# Cloudflare IPs (UPDATED: 19/11/2025)
 # -----------------------------
-def real_ip_extractor(trusted_proxies: Optional[List[str]] = None):
-    trusted = set(trusted_proxies or [])
-    def get_ip(scope: Scope) -> str:
-        headers = scope.get("headers") or []
-        cf_ip = next((v for k, v in headers if k == b"cf-connecting-ip"), None)
-        if cf_ip:
-            return cf_ip.decode().strip()
-        client_ip = scope.get("client", ("unknown", 0))[0]
-        xff = next((v for k, v in headers if k == b"x-forwarded-for"), None)
-        if not xff or client_ip not in trusted:
+CLOUDFLARE_NETWORKS = [
+    ipaddress.ip_network(cidr) for cidr in {
+        "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+        "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+        "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+        "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+        "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32",
+        "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32"
+    }
+]
+
+def _ip_in_networks(ip_str: str, networks) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return any(ip in net for net in networks)
+    except ValueError:
+        return False
+
+# -----------------------------
+# Extractor
+# -----------------------------
+def get_real_ip(trusted_proxies: Optional[List[str]] = None, *, cloudflare: bool = False):
+    trusted_networks = [ipaddress.ip_network(p) for p in (trusted_proxies or [])]
+    if cloudflare:
+        trusted_networks.extend(CLOUDFLARE_NETWORKS)
+
+    def extractor(scope: Scope) -> str:
+        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
+        client_ip = scope.get("client", ("", None))[0]
+
+        # 1. CF-Connecting-IP (only if direct client is real Cloudflare)
+        if cloudflare and client_ip and "cf-connecting-ip" in headers:
+            if _ip_in_networks(client_ip, CLOUDFLARE_NETWORKS):
+                return headers["cf-connecting-ip"].strip()
+
+        # 2. X-Forwarded-For: trust only the right-most non-trusted IP
+        if "x-forwarded-for" in headers:
+            ips = [ip.strip() for ip in headers["x-forwarded-for"].split(",")]
+            for ip in reversed(ips):
+                if ip and not _ip_in_networks(ip, trusted_networks):
+                    return ip
+
+        # 3. Direct client (if not behind trusted proxy)
+        if client_ip and not _ip_in_networks(client_ip, trusted_networks):
             return client_ip
-        chain = [ip.strip() for ip in xff.decode().split(",") if ip.strip()]
-        for ip in reversed(chain):
-            if ip not in trusted:
-                return ip
-        return client_ip
-    return get_ip
+
+        return "unknown"
+    return extractor
 
 # -----------------------------
 # Redis Backend
@@ -62,28 +94,27 @@ class AsyncRedisBackend:
     return count .. ":" .. ttl
     """
 
-    def __init__(self, redis_client: redis_async.Redis):
+    def __init__(self, redis_client: redis_async.Redis, *, fail_closed: bool = True):
         self.redis = redis_client
+        self.fail_closed = fail_closed
         self.script = redis_client.register_script(self.LUA_SCRIPT)
 
     async def incr(self, key: str, limit: int, period: int) -> Tuple[int, int]:
         try:
             raw = await asyncio.wait_for(
-                self.script(keys=[key], args=[limit, period]), timeout=0.1
-)
-            # Safely handle bytes or str
+                self.script(keys=[key], args=[limit, period]), timeout=0.5
+            )
             if isinstance(raw, (bytes, bytearray)):
                 raw = raw.decode()
-            parts = raw.split(":", 1)
-            if len(parts) != 2:
-                raise ValueError(f"Invalid Redis Lua return: {raw!r}")
-            return int(parts[0]), int(parts[1])
-        except Exception:
-            # Fail-open: Redis down → allow request (secure default)
-            return 0, 0
+            count_str, ttl_str = raw.split(":", 1)
+            return int(count_str), int(ttl_str)
+        except Exception as exc:
+            if not self.fail_closed:
+                return 0, 0  # explicit fail-open for testing/dev
+            raise RuntimeError("Rate limiter unavailable") from exc
 
 # -----------------------------
-# In-Memory Backend (Dev Only)
+# In-Memory Backend (unchanged, dev only)
 # -----------------------------
 class InMemoryBackend:
     def __init__(self, cleanup_interval: int = 10):
@@ -116,7 +147,7 @@ class InMemoryBackend:
             now = asyncio.get_event_loop().time()
             expired = [k for k, (_, exp) in self.store.items() if exp <= now]
             for k in expired:
-                self.store.pop(k, None)
+                del self.store[k]
                 self.locks.pop(k, None)
 
 # -----------------------------
@@ -129,22 +160,18 @@ class RateLimiterMiddleware:
         rules: Dict[str, Dict[str, int]],
         backend,
         trusted_proxies: Optional[List[str]] = None,
+        cloudflare: bool = False,
     ):
         self.app = app
         self.backend = backend
-        self.get_ip = real_ip_extractor(trusted_proxies)
+        self.get_ip = get_real_ip(trusted_proxies, cloudflare=cloudflare)
 
-        # Pre-sort: longest prefix first
-        self.rules = sorted(
-            [(p, c["limit"], c["period"]) for p, c in rules.items()],
-            key=lambda x: len(x[0]), reverse=True
+        # longest → shortest
+        self.sorted_rules = sorted(
+            rules.items(),
+            key=lambda x: len(x[0]),
+            reverse=True,
         )
-
-        # Prefix map: prefix -> (key_template, limit, period)
-        self.prefix_map: Dict[str, Tuple[str, int, int]] = {
-            p: (f"rl:{{ip}}:{p}", l, per)
-            for p, l, per in self.rules
-        }
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] != "http":
@@ -153,54 +180,61 @@ class RateLimiterMiddleware:
         path = scope["path"]
         ip = self.get_ip(scope)
 
-        # Collect matching: longest first (from pre-sorted)
+        # Find ALL matching prefixes (longest first)
         matching = []
-        for prefix in self.rules:
-            if path.startswith(prefix[0]):
-                tmpl, limit, period = self.prefix_map[prefix[0]]
-                key = tmpl.format(ip=ip)
-                matching.append((key, limit, period))
+        for prefix, cfg in self.sorted_rules:
+            if path.startswith(prefix):
+                key = f"rl:{ip}:{prefix}"
+                matching.append((key, cfg["limit"], cfg["period"]))
 
         if not matching:
             return await self.app(scope, receive, send)
 
-        # Parallel incr
-        tasks = [self.backend.incr(k, l, p) for k, l, p in matching]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Increment ALL matching rules in parallel
+        results = await asyncio.gather(
+            *[self.backend.incr(k, l, p) for k, l, p in matching],
+            return_exceptions=True,
+        )
 
-        headers: Dict[str, str] = {}
+        headers = {}
         retry_after = 0
         exceeded = False
 
         for (key, limit, period), result in zip(matching, results):
             if isinstance(result, BaseException):
-                continue
+                # fail-closed on any Redis error
+                resp = JSONResponse(status_code=503, content={"detail": "Service unavailable"})
+                return await resp(scope, receive, send)
+
             count, ttl = result
-            remaining = max(limit - count, 0)
-            headers.update({
+            remaining = max(0, limit - count)
+
+            # Always overwrite with more specific (appears rule
+            headers = {
                 "X-RateLimit-Limit": str(limit),
                 "X-RateLimit-Remaining": str(remaining),
                 "X-RateLimit-Reset": str(ttl),
-            })
+            }
+
             if count > limit:
                 exceeded = True
                 retry_after = max(retry_after, ttl)
-                # Stop on first exceed (longest prefix wins)
+                break  # longest (most specific) exceeded → block immediately
 
         if exceeded:
             resp = JSONResponse(
                 status_code=429,
-                content={"detail": f"Rate limit exceeded. Retry after {retry_after}s."},
+                content={"detail": f"Rate limit exceeded. Retry after {retry_after}s"},
                 headers={**headers, "Retry-After": str(retry_after)},
             )
             return await resp(scope, receive, send)
 
-        # Success: add headers
-        async def send_with_headers(message):
+        # Success – send headers from most specific rule
+        async def send_wrapped(message):
             if message["type"] == "http.response.start":
                 h = message.setdefault("headers", [])
                 for k, v in headers.items():
                     h.append((k.encode(), v.encode()))
             await send(message)
 
-        await self.app(scope, receive, send_with_headers)
+        await self.app(scope, receive, send_wrapped)
