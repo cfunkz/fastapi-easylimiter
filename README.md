@@ -69,8 +69,8 @@ app.add_middleware(
     RateLimiterMiddleware,
     rules=rules,
     backend=backend,
-    trusted_proxies=["127.0.0.1"],
-    cloudflare=True, # enables CF-Connecting-IP
+    trusted_proxies=[""],
+    cloudflare=True,          # enables CF-Connecting-IP
     enable_bans=True,         # ← new: turn on/off banning
     ban_threshold=15,         # ← violations before ban
     ban_duration=900,         # ← ban length in seconds
