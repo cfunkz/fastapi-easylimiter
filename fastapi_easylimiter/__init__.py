@@ -43,17 +43,15 @@
 # SOFTWARE.
 
 import asyncio
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, Tuple
 from starlette.types import ASGIApp, Scope, Receive, Send
 from starlette.responses import JSONResponse
 import redis.asyncio as redis_async
 import ipaddress
 
-# -----------------------------
-# Cloudflare IPs (UPDATED: 19/11/2025)
-# -----------------------------
+# Cloudflare IPs – *UPDATED* 19/11/2025 NEW: Cloudflare CIDR ranges
 CLOUDFLARE_NETWORKS = [
-    ipaddress.ip_network(cidr) for cidr in {
+    ipaddress.ip_network(c) for c in {
         "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
         "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
         "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
@@ -63,199 +61,191 @@ CLOUDFLARE_NETWORKS = [
     }
 ]
 
-def _ip_in_networks(ip_str: str, networks) -> bool:
-    try:
-        ip = ipaddress.ip_address(ip_str)
-        return any(ip in net for net in networks)
-    except ValueError:
-        return False
-
-# -----------------------------
-# Extractor
-# -----------------------------
-def get_real_ip(trusted_proxies: Optional[List[str]] = None, *, cloudflare: bool = False):
-    trusted_networks = [ipaddress.ip_network(p) for p in (trusted_proxies or [])]
+def get_real_ip(trusted_proxies: Optional[list[str]] = None, *, cloudflare: bool = False):
+    trusted = [ipaddress.ip_network(p) for p in (trusted_proxies or [])]
     if cloudflare:
-        trusted_networks.extend(CLOUDFLARE_NETWORKS)
+        trusted.extend(CLOUDFLARE_NETWORKS)
 
     def extractor(scope: Scope) -> str:
-        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
-        client_ip = scope.get("client", ("", None))[0]
+        headers = dict(scope.get("headers", []))
+        headers = {k.decode(): v.decode() for k, v in headers.items()}
+        client = scope.get("client", (None, None))[0]
 
-        # 1. CF-Connecting-IP (only if direct client is real Cloudflare)
-        if cloudflare and client_ip and "cf-connecting-ip" in headers:
-            if _ip_in_networks(client_ip, CLOUDFLARE_NETWORKS):
-                return headers["cf-connecting-ip"].strip()
+        # CF direct
+        if cloudflare and client and headers.get("cf-connecting-ip"):
+            if ipaddress.ip_address(client) in CLOUDFLARE_NETWORKS:
+                return headers["cf-connecting-ip"]
 
-        # 2. X-Forwarded-For: trust only the right-most non-trusted IP
+        # X-Forwarded-For – rightmost untrusted
         if "x-forwarded-for" in headers:
-            ips = [ip.strip() for ip in headers["x-forwarded-for"].split(",")]
-            for ip in reversed(ips):
-                if ip and not _ip_in_networks(ip, trusted_networks):
+            for ip in reversed(headers["x-forwarded-for"].split(",")):
+                ip = ip.strip()
+                if ip and ipaddress.ip_address(ip) not in trusted:
                     return ip
 
-        # 3. Direct client (if not behind trusted proxy)
-        if client_ip and not _ip_in_networks(client_ip, trusted_networks):
-            return client_ip
+        # Direct client
+        if client and ipaddress.ip_address(client) not in trusted:
+            return client
 
         return "unknown"
     return extractor
 
-# -----------------------------
-# Redis Backend
-# -----------------------------
+# ----------------------------- Backends -----------------------------
 class AsyncRedisBackend:
-    LUA_SCRIPT = """
-    local key = KEYS[1]
-    local limit = tonumber(ARGV[1])
-    local period = tonumber(ARGV[2])
-    local count = redis.call('INCR', key)
-    if count == 1 then redis.call('EXPIRE', key, period) end
-    local ttl = redis.call('TTL', key)
-    if ttl < 0 then ttl = period end
-    return count .. ":" .. ttl
+    LUA = """
+    local c = redis.call('INCR', KEYS[1])
+    if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+    local t = redis.call('TTL', KEYS[1])
+    if t < 0 then t = tonumber(ARGV[2]) end
+    return c .. ':' .. t
     """
 
-    def __init__(self, redis_client: redis_async.Redis, *, fail_closed: bool = True):
-        self.redis = redis_client
+    def __init__(self, client: redis_async.Redis, *, fail_closed: bool = True):
+        self.client = client
         self.fail_closed = fail_closed
-        self.script = redis_client.register_script(self.LUA_SCRIPT)
+        self.script = client.register_script(self.LUA)
 
-    async def incr(self, key: str, limit: int, period: int) -> Tuple[int, int]:
+    async def incr(self, key: str, limit: int, window: int) -> Tuple[int, int]:
         try:
             raw = await asyncio.wait_for(
-                self.script(keys=[key], args=[limit, period]), timeout=0.5
+                self.script(keys=[key], args=[limit, window]), timeout=0.5
             )
-            if isinstance(raw, (bytes, bytearray)):
-                raw = raw.decode()
-            count_str, ttl_str = raw.split(":", 1)
-            return int(count_str), int(ttl_str)
-        except Exception as exc:
+            raw = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
+            count, ttl = map(int, raw.split(":"))
+            return count, ttl
+        except Exception:
             if not self.fail_closed:
-                return 0, 0  # explicit fail-open for testing/dev
-            raise RuntimeError("Rate limiter unavailable") from exc
+                return 0, 0
+            raise RuntimeError("Rate limiter unavailable")
 
-# -----------------------------
-# In-Memory Backend (unchanged, dev only)
-# -----------------------------
 class InMemoryBackend:
-    def __init__(self, cleanup_interval: int = 10):
+    def __init__(self):
         self.store: Dict[str, Tuple[int, float]] = {}
         self.locks: Dict[str, asyncio.Lock] = {}
-        self.cleanup_interval = cleanup_interval
-        asyncio.create_task(self._cleanup_loop())
 
     async def _lock(self, key: str) -> asyncio.Lock:
-        if key not in self.locks:
-            self.locks[key] = asyncio.Lock()
-        return self.locks[key]
+        return self.locks.setdefault(key, asyncio.Lock())
 
-    async def incr(self, key: str, limit: int, period: int) -> Tuple[int, int]:
+    async def incr(self, key: str, limit: int, window: int) -> Tuple[int, int]:
         now = asyncio.get_event_loop().time()
         async with await self._lock(key):
-            count, expire_at = self.store.get(key, (0, 0.0))
-            if expire_at and now >= expire_at:
+            count, expiry = self.store.get(key, (0, 0.0))
+            if expiry <= now:
                 count = 0
             count += 1
             if count == 1:
-                expire_at = now + period
-            self.store[key] = (count, expire_at)
-            ttl = max(int(expire_at - now), 0)
-            return count, ttl
+                expiry = now + window
+            self.store[key] = (count, expiry)
+            return count, max(int(expiry - now), 0)
 
-    async def _cleanup_loop(self):
-        while True:
-            await asyncio.sleep(self.cleanup_interval)
-            now = asyncio.get_event_loop().time()
-            expired = [k for k, (_, exp) in self.store.items() if exp <= now]
-            for k in expired:
-                del self.store[k]
-                self.locks.pop(k, None)
-
-# -----------------------------
-# RateLimiterMiddleware
-# -----------------------------
+# ----------------------------- Middleware -----------------------------
 class RateLimiterMiddleware:
     def __init__(
         self,
         app: ASGIApp,
         rules: Dict[str, Dict[str, int]],
         backend,
-        trusted_proxies: Optional[List[str]] = None,
+        *,
+        trusted_proxies: Optional[list[str]] = None,
         cloudflare: bool = False,
+        enable_bans: bool = True,
+        ban_threshold: int = 10,
+        ban_duration: int = 300,
+        offenses_ttl: int = 1800,
     ):
         self.app = app
         self.backend = backend
         self.get_ip = get_real_ip(trusted_proxies, cloudflare=cloudflare)
+        self.rules = sorted(rules.items(), key=lambda x: len(x[0]), reverse=True)
+        self.is_redis = isinstance(backend, AsyncRedisBackend)
 
-        # longest → shortest
-        self.sorted_rules = sorted(
-            rules.items(),
-            key=lambda x: len(x[0]),
-            reverse=True,
-        )
+        self.enable_bans = enable_bans
+        self.ban_threshold = ban_threshold
+        self.ban_duration = ban_duration
+        self.offenses_ttl = offenses_ttl
+
+    async def _banned(self, ip: str) -> bool:
+        key = f"ban:{ip}"
+        if self.is_redis:
+            return bool(await self.backend.client.exists(key))
+        _, exp = self.backend.store.get(key, (0, 0.0))
+        return exp > asyncio.get_event_loop().time()
+
+    async def _offense(self, ip: str):
+        if not self.enable_bans:
+            return
+        okey, bkey = f"offenses:{ip}", f"ban:{ip}"
+        now = asyncio.get_event_loop().time()
+
+        if self.is_redis:
+            pipe = self.backend.client.pipeline()
+            pipe.incr(okey)
+            pipe.expire(okey, self.offenses_ttl)
+            count = (await pipe.execute())[0]
+            if count >= self.ban_threshold:
+                await self.backend.client.setex(bkey, self.ban_duration, "1")
+        else:
+            async with await self.backend._lock(okey):
+                c, exp = self.backend.store.get(okey, (0, 0.0))
+                if exp <= now:
+                    c = 0
+                c += 1
+                self.backend.store[okey] = (c, now + self.offenses_ttl)
+                if c >= self.ban_threshold:
+                    self.backend.store[bkey] = (1, now + self.ban_duration)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        path = scope["path"]
         ip = self.get_ip(scope)
+        path = scope["path"]
 
-        # Find ALL matching prefixes (longest first)
-        matching = []
-        for prefix, cfg in self.sorted_rules:
+        if await self._banned(ip):
+            return await JSONResponse(
+                {"detail": "Temporarily banned"}, status_code=429,
+                headers={"Retry-After": str(self.ban_duration)}
+            )(scope, receive, send)
+
+        # Match rules (longest first)
+        tasks = []
+        for prefix, cfg in self.rules:
             if path.startswith(prefix):
-                key = f"rl:{ip}:{prefix}"
-                matching.append((key, cfg["limit"], cfg["period"]))
+                tasks.append((f"rl:{ip}:{prefix}", cfg["limit"], cfg["period"]))
 
-        if not matching:
+        if not tasks:
             return await self.app(scope, receive, send)
 
-        # Increment ALL matching rules in parallel
-        results = await asyncio.gather(
-            *[self.backend.incr(k, l, p) for k, l, p in matching],
-            return_exceptions=True,
-        )
+        results = await asyncio.gather(*(self.backend.incr(k, l, p) for k, l, p in tasks))
 
-        headers = {}
+        ratelimit_headers = {}
         retry_after = 0
         exceeded = False
 
-        for (key, limit, period), result in zip(matching, results):
-            if isinstance(result, BaseException):
-                # fail-closed on any Redis error
-                resp = JSONResponse(status_code=503, content={"detail": "Service unavailable"})
-                return await resp(scope, receive, send)
-
-            count, ttl = result
+        for (_, limit, _), (count, ttl) in zip(tasks, results):
             remaining = max(0, limit - count)
-
-            headers = {
+            ratelimit_headers = {
                 "X-RateLimit-Limit": str(limit),
                 "X-RateLimit-Remaining": str(remaining),
                 "X-RateLimit-Reset": str(ttl),
             }
-
             if count > limit:
                 exceeded = True
                 retry_after = max(retry_after, ttl)
-                break  # longest (most specific) exceeded → block immediately
 
         if exceeded:
-            resp = JSONResponse(
+            await self._offense(ip)
+            return await JSONResponse(
+                {"detail": f"Rate limit exceeded. Retry after {retry_after}s"},
                 status_code=429,
-                content={"detail": f"Rate limit exceeded. Retry after {retry_after}s"},
-                headers={**headers, "Retry-After": str(retry_after)},
-            )
-            return await resp(scope, receive, send)
+                headers={**ratelimit_headers, "Retry-After": str(retry_after)}
+            )(scope, receive, send)
 
-        # Success – send headers from most specific rule
-        async def send_wrapped(message):
+        async def send_with_headers(message):
             if message["type"] == "http.response.start":
                 h = message.setdefault("headers", [])
-                for k, v in headers.items():
+                for k, v in ratelimit_headers.items():
                     h.append((k.encode(), v.encode()))
             await send(message)
 
-        await self.app(scope, receive, send_wrapped)
+        await self.app(scope, receive, send_with_headers)
