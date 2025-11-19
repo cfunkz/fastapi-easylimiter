@@ -8,6 +8,10 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
 
 ## Features
 - Async rate limiting
+- Optional temporary IP bans
+  - Configurable threshold (default 10 violations)
+  - Sliding 30-min offense window
+  - 5-min ban on repeat abuse
 - Cache
   - Redis
   - In-Memory (single worker dev)
@@ -67,6 +71,10 @@ app.add_middleware(
     backend=backend,
     trusted_proxies=["127.0.0.1"],
     cloudflare=True, # enables CF-Connecting-IP
+    enable_bans=True,         # ← new: turn on/off banning
+    ban_threshold=15,         # ← violations before ban
+    ban_duration=900,         # ← ban length in seconds
+    offenses_ttl=1800,        # ← offense counting window
 )
 ```
 
@@ -96,14 +104,17 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `backend`         | Redis or InMemory backend | Rate-limit storage                          |
 | `trusted_proxies` | list[str]                 | Proxies allowed to trust XFF headers        |
 | `cloudflare`      | bool                      | Enable Cloudflare IP extraction             |
+| `enable_bans`     | bool                      | Enable temporary IP bans                    |
+| `ban_threshold`   | int                       | Violations before ban                       |
+| `ban_duration`    | int                       | Ban length in seconds                       |
+| `offenses_ttl`    | int                       | Offense counting window in seconds          |
 
 
 ## Contributing
-Contributions and forks are always welcome!
-Feel free to adapt, improve, or extend this middleware for your own needs. This was purely made out of personal necessity.
+Contributions and forks are always welcome! Feel free to adapt and improve for your own needs.
 
 ## Support
+
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
-Parts of this code were generated/assisted by AI Grok.
-
+Parts of this code were generated/assisted by AI (Grok).
