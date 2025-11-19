@@ -3,7 +3,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/cfunkz/fastapi-easylimiter?style=social)](https://github.com/cfunkz/fastapi-easylimiter/stargazers) [![GitHub forks](https://img.shields.io/github/forks/cfunkz/fastapi-easylimiter?style=social)](https://github.com/cfunkz/fastapi-easylimiter/network/members) [![GitHub issues](https://img.shields.io/github/issues/cfunkz/fastapi-easylimiter)](https://github.com/cfunkz/fastapi-easylimiter/issues) [![GitHub license](https://img.shields.io/github/license/cfunkz/fastapi-easylimiter)](https://github.com/cfunkz/fastapi-easylimiter/blob/main/LICENSE) [![PyPI](https://img.shields.io/pypi/v/fastapi-easylimiter)](https://pypi.org/project/fastapi-easylimiter/)
 
 
-An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory caching. Designed to handle auto-generated routes (such as those provided by FastAPI-Users) without requiring decorators, purely for simplicity.
+An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory caching. Designed to handle auto-generated routes (such as those provided by FastAPI-Users) without requiring decorators, purely out of simplicity.
 
 
 ## Features
@@ -23,8 +23,8 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
 - Proxy Aware
   - Uses `'X-Forwarded-For'` only when the sender is trusted
   - Rejects spoofed XFF headers
-  - Uses `'CF-Connecting-IP'` when trusted requests pass through Cloudflare
-  - Falls back to ASGI `scope["client"]` if no trusted headers exist
+  - Uses `'CF-Connecting-IP'` and chekcks connection IP against CF CIDR list
+  - Falls back to ASGI scope["client"] if no trusted headers exist
 - Zero Dependencies Beyond Redis Client
   - Starlette-style ASGI middleware
 
@@ -56,7 +56,8 @@ backend = AsyncRedisBackend(redis_client)
 # backend = InMemoryBackend()
 
 rules = {
-    "/api/": {"limit": 60, "period": 60},
+    "/": {"limit": 600, "period": 60},          # GLOBAL: 600 req/min per IP
+    "/api/": {"limit": 10, "period": 1},
     "/api/users": {"limit": 1, "period": 2},
 }
 
@@ -64,7 +65,8 @@ app.add_middleware(
     RateLimiterMiddleware,
     rules=rules,
     backend=backend,
-    trusted_proxies=["127.0.0.1"]
+    trusted_proxies=["127.0.0.1"],
+    cloudflare=True, # enables CF-Connecting-IP
 )
 ```
 
@@ -74,8 +76,6 @@ A request to `/api/users/me` will match:
 
 - /api/users
 - /api
-
-Both rules count independently.
 
 If ANY rule is exceeded → request becomes 429.
 
@@ -94,7 +94,8 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `app`             | ASGIApp                   | FastAPI/ASGI app                            |
 | `rules`           | dict                      | `{ prefix: {"limit": int, "period": int} }` |
 | `backend`         | Redis or InMemory backend | Rate-limit storage                          |
-| `trusted_proxies` | list[str]                 | Proxies allowed to send real client IP      |
+| `trusted_proxies` | list[str]                 | Proxies allowed to trust XFF headers        |
+| `cloudflare`      | bool                      | Enable Cloudflare IP extraction             |
 
 
 ## Contributing
@@ -102,20 +103,4 @@ Contributions and forks are always welcome!
 Feel free to adapt, improve, or extend this middleware for your own needs. This was purely made out of personal necessity.
 
 ## Support
-
-
-
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
-
-
-
-
-
-
-
-
-
-
-
-
-
