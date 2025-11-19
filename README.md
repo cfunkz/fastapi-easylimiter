@@ -70,7 +70,7 @@ app.add_middleware(
     rules=rules,
     backend=backend,
     trusted_proxies=["127.0.0.1"],
-    cloudflare=True, # enables CF-Connecting-IP
+    cloudflare=True,          # enables CF-Connecting-IP
     enable_bans=True,         # ← new: turn on/off banning
     ban_threshold=15,         # ← violations before ban
     ban_duration=900,         # ← ban length in seconds
@@ -120,3 +120,4 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
+
