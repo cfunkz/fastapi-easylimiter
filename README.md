@@ -90,8 +90,8 @@ If ANY rule is exceeded → request becomes 429.
 **Uses Atomic LUA script:**
 
 ```lua
-local count = redis.call('INCR', key)
-if count == 1 then redis.call('EXPIRE', key, period) end
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
 ```
 
 Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0.113.5:/api`
