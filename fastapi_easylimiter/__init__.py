@@ -45,7 +45,7 @@
 import asyncio
 from typing import Dict, Optional, Tuple
 from starlette.types import ASGIApp, Scope, Receive, Send
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, HTMLResponse
 import redis.asyncio as redis_async
 import ipaddress
 
@@ -202,10 +202,40 @@ class RateLimiterMiddleware:
         path = scope["path"]
 
         if await self._banned(ip):
-            return await JSONResponse(
-                {"detail": "Temporarily banned"}, status_code=429,
-                headers={"Retry-After": str(self.ban_duration)}
-            )(scope, receive, send)
+            accept = next((v.decode() for k,v in scope.get("headers",[]) if k.decode().lower()=="accept"), "")
+            if "text/html" in accept or not accept:
+                return await HTMLResponse(
+                    """
+                    <!DOCTYPE html>
+                    <html lang="en"><head>
+                        <meta charset="utf-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                        <title>Temporarily Blocked</title>
+                        <style>
+                            body{margin:0;height:100vh;display:grid;place-items:center;background:#0d1117;color:#c9d1d9;font:16px/1.5 system-ui,-apple-system,sans-serif}
+                            .card{max-width:360px;width:100%;padding:32px;background:#161b22;border:1px solid #30363d;border-radius:0;text-align:center}
+                            h1{margin:0 0 12px;font-size:22px;color:#f85149}
+                            p{margin:8px 0 0;font-size:15px}
+                            small{margin-top:24px;display:block;font-size:12px;color:#8b949e}
+                        </style>
+                    </head><body>
+                        <div class="card">
+                            <h1>Access Blocked</h1>
+                            <p>Too many requests from your IP.</p>
+                            <p>Please try again later.</p>
+                            <small>Blocked by <a href="https://github.com/cfunkz/fastapi-easylimiter" style="color:green;text-decoration:none">fastapi-easylimiter</a></small>
+                        </div>
+                    </body></html>
+                    """,
+                    status_code=429,
+                    headers={"Retry-After": str(self.ban_duration)},
+                )(scope, receive, send)
+            else:
+                return await JSONResponse(  # API clients
+                    {"detail": "Temporarily banned. Too many requests."},
+                    status_code=429,
+                    headers={"Retry-After": str(self.ban_duration)}
+                )(scope, receive, send)
 
         # Match rules (longest first)
         tasks = []
