@@ -31,7 +31,6 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
   - Falls back to ASGI scope["client"] if no trusted headers exist
 - Zero Dependencies Beyond Redis Client
   - Starlette-style ASGI middleware
-
  
 ## Installation
 
@@ -109,6 +108,8 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `ban_duration`    | int                       | Ban length in seconds                       |
 | `offenses_ttl`    | int                       | Offense counting window in seconds          |
 
+<img width="1919" height="874" alt="image" src="https://github.com/user-attachments/assets/b56e83cd-2e43-4e71-9203-17949950c25e" />
+
 
 ## Contributing
 Contributions and forks are always welcome! Feel free to adapt and improve for your own needs.
@@ -118,4 +119,5 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
+
 
