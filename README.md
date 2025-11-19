@@ -8,7 +8,7 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
 
 ## Features
 - Async rate limiting
-- Optional temporary IP bans
+- Optional global IP bans
   - Configurable threshold (default 10 violations)
   - Sliding 30-min offense window
   - 5-min ban on repeat abuse
@@ -118,3 +118,4 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
+
