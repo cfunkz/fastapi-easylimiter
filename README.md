@@ -8,7 +8,7 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
 
 ## Features
 - Async rate limiting
-- Optional global IP bans
+- Optional temporary IP bans
   - Configurable threshold (default 10 violations)
   - Sliding 30-min offense window
   - 5-min ban on repeat abuse
@@ -31,6 +31,7 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
   - Falls back to ASGI scope["client"] if no trusted headers exist
 - Zero Dependencies Beyond Redis Client
   - Starlette-style ASGI middleware
+- Simple Web Page for banned IPs or JSON for API clients
  
 ## Installation
 
@@ -68,8 +69,8 @@ app.add_middleware(
     RateLimiterMiddleware,
     rules=rules,
     backend=backend,
-    trusted_proxies=[""],
-    cloudflare=True,          # enables CF-Connecting-IP
+    trusted_proxies=["127.0.0.1"],
+    cloudflare=True, # enables CF-Connecting-IP
     enable_bans=True,         # ← new: turn on/off banning
     ban_threshold=15,         # ← violations before ban
     ban_duration=900,         # ← ban length in seconds
@@ -89,8 +90,8 @@ If ANY rule is exceeded → request becomes 429.
 **Uses Atomic LUA script:**
 
 ```lua
-local c = redis.call('INCR', KEYS[1])
-if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+local count = redis.call('INCR', key)
+if count == 1 then redis.call('EXPIRE', key, period) end
 ```
 
 Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0.113.5:/api`
@@ -108,8 +109,8 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `ban_duration`    | int                       | Ban length in seconds                       |
 | `offenses_ttl`    | int                       | Offense counting window in seconds          |
 
-<img width="1919" height="874" alt="image" src="https://github.com/user-attachments/assets/b56e83cd-2e43-4e71-9203-17949950c25e" />
 
+<img width="1919" height="874" alt="image" src="https://github.com/user-attachments/assets/b56e83cd-2e43-4e71-9203-17949950c25e" />
 
 ## Contributing
 Contributions and forks are always welcome! Feel free to adapt and improve for your own needs.
@@ -119,5 +120,3 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
-
-
