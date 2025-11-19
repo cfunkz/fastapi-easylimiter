@@ -104,3 +104,6 @@ Feel free to adapt, improve, or extend this middleware for your own needs. This 
 
 ## Support
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+
+Parts of this code were generated/assisted by AI Grok.
+
