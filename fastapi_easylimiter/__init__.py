@@ -160,6 +160,7 @@ class RateLimiterMiddleware:
         ban_duration: int = 300,
         offenses_ttl: int = 1800,
         ban_page: Optional[str] = None,
+        rate_page: Optional[str] = None,
     ):
         self.app = app
         self.backend = backend
@@ -171,6 +172,7 @@ class RateLimiterMiddleware:
         self.ban_duration = ban_duration
         self.offenses_ttl = offenses_ttl
         self.ban_page = (ban_page or BAN_PAGE).strip()
+        self.rate_page = (rate_page or RATE_PAGE).strip()
 
     async def _banned(self, ip: str) -> bool:
         key = f"ban:{ip}"
@@ -246,11 +248,10 @@ class RateLimiterMiddleware:
         if exceeded:
             await self._offense(ip)
             ratelimit_headers["Retry-After"] = str(retry_after)
-            return await JSONResponse(
-                {"detail": f"Rate limit exceeded. Retry after {retry_after}s"},
-                429,
-                ratelimit_headers
-            )(scope, receive, send)
+            accept = next((v.decode() for k, v in scope.get("headers", []) if k.decode().lower() == "accept"), "")
+            if "text/html" in accept or not accept:
+                return await HTMLResponse(RATE_PAGE.format(retry_after=retry_after), 429, ratelimit_headers)(scope, receive, send)
+            return await JSONResponse({"detail": f"Rate limit exceeded. Retry after {retry_after}s"}, 429, ratelimit_headers)(scope, receive, send)
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
@@ -262,3 +263,4 @@ class RateLimiterMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 BAN_PAGE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Blocked</title><style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0d1117;color:#c9d1d9;font:16px/1.5 system-ui,sans-serif}.card{max-width:360px;padding:32px;background:#161b22;border:1px solid #30363d;border-radius:12px;text-align:center}h1{margin:0 0 12px;font-size:22px;color:#f85149}p{margin:8px 0 0;font-size:15px}</style></head><body><div class="card"><h1>Access Blocked</h1><p>Too many requests from your IP.</p><p>Please try again later.</p></div></body></html>"""
+RATE_PAGE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rate Limit Exceeded</title><style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0d1117;color:#c9d1d9;font:16px/1.5 system-ui,sans-serif}.card{max-width:360px;padding:32px;background:#161b22;border:1px solid #30363d;border-radius:12px;text-align:center}h1{margin:0 0 12px;font-size:22px;color:#f85149}p{margin:8px 0 0;font-size:15px}</style></head><body><div class="card"><h1>Rate Limit Exceeded</h1><p>You have made too many requests.</p><p>Please retry after {retry_after} seconds.</p></div></body></html>"""
