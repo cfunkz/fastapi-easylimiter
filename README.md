@@ -110,7 +110,7 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `ban_page`        | str                       | Custom HTML ban page                        |
 
 
-<img width="1919" height="874" alt="image" src="https://i.ibb.co/pBMt410y/image.png" />
+<a href="https://ibb.co/YF1zfNRZ"><img src="https://i.ibb.co/pBMt410y/image.png" alt="image" border="0"></a>
 
 ## Contributing
 Contributions and forks are always welcome! Feel free to adapt and improve for your own needs.
@@ -120,3 +120,4 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
+
