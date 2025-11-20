@@ -102,6 +102,7 @@ if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
 - `offenses:{client_ip}`
   - Example: `offenses:203.0.113.5`
 
+**The middleware implements following settings/variables**
 
 | Parameter         | Type                      | Description                                 |
 | ----------------- | ------------------------- | ------------------------------------------- |
@@ -128,6 +129,7 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
+
 
 
 
