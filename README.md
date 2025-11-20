@@ -93,7 +93,14 @@ local c = redis.call('INCR', KEYS[1])
 if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
 ```
 
-Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0.113.5:/api`
+**Existing key patterns in Redis**
+
+- `rl:{client_ip}:{prefix}`
+  - Example: `rl:203.0.113.5:/api`
+- `ban:{client_ip}`
+  - Example: `ban:203.0.113.5`
+- `offenses:{client_ip}`
+  - Example: `offenses:203.0.113.5`
 
 
 | Parameter         | Type                      | Description                                 |
@@ -110,7 +117,8 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `ban_page`        | str                       | Custom HTML ban page                        |
 
 
-<a href="https://ibb.co/YF1zfNRZ"><img src="https://i.ibb.co/pBMt410y/image.png" alt="image" border="0"></a>
+<img width="1919" height="873" alt="image" src="https://github.com/user-attachments/assets/bcfc5a56-f123-4d20-bb88-3e300ac042f7" />
+
 
 ## Contributing
 Contributions and forks are always welcome! Feel free to adapt and improve for your own needs.
@@ -120,4 +128,5 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
+
 
