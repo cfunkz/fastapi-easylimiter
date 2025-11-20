@@ -106,7 +106,7 @@ class AsyncRedisBackend:
     async def incr(self, key: str, limit: int, window: int) -> Tuple[int, int, bool]:
         try:
             res = await asyncio.wait_for(
-                self.script(keys=[key], args=[limit, window]), timeout=0.5
+                self.script(keys=[key], args=[limit, window]), timeout=1.0
             )
             count = int(res[0])
             ttl = int(res[1])
@@ -207,18 +207,25 @@ class RateLimiterMiddleware:
                     self.backend.store[bkey] = (1, now + self.ban_duration)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
+        if scope["type"] not in ("http", "websocket"): # NEW: WebSocket support
+                return await self.app(scope, receive, send)
 
         ip = self.get_ip(scope)
         path = scope["path"]
 
         if await self._banned(ip):
-            accept = next((v.decode() for k, v in scope.get("headers", []) if k.decode().lower() == "accept"), "")
             headers = {"Retry-After": str(self.ban_duration)}
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+                return
+            # HTTP only from here
+            accept = next(
+                (v.decode() for k, v in scope.get("headers", []) if k.decode().lower() == "accept"),
+                "")
             if "text/html" in accept or not accept:
                 return await HTMLResponse(self.ban_page, 429, headers)(scope, receive, send)
-            return await JSONResponse({"detail": "Temporarily banned"}, 429, headers)(scope, receive, send)
+            return await JSONResponse(
+                {"detail": "Temporarily banned"}, 429, headers)(scope, receive, send)
 
         tasks = []
         for prefix, cfg in self.rules:
