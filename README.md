@@ -31,7 +31,7 @@ An ASGI async rate-limiting middleware for FastAPI with Redis or in-memory cachi
   - Falls back to ASGI scope["client"] if no trusted headers exist
 - Zero Dependencies Beyond Redis Client
   - Starlette-style ASGI middleware
-- Simple Web Page for banned IPs or JSON for API clients
+- HTMLResponse for banned browser clients or JSONResponse for API clients
  
 ## Installation
 
@@ -69,29 +69,28 @@ app.add_middleware(
     RateLimiterMiddleware,
     rules=rules,
     backend=backend,
-    trusted_proxies=["127.0.0.1"],
-    cloudflare=True,          # enables CF-Connecting-IP
-    enable_bans=True,         # ← new: turn on/off banning
+    trusted_proxies=[""],     # ← NEW: your proxy IPs here: OPTIONAL
+    cloudflare=False,         # ← NEW: enables CF-Connecting-IP: OPTIONAL
+    enable_bans=True,         # ← NEW: turn on/off banning: OPTIONAL
     ban_threshold=15,         # ← violations before ban
-    ban_duration=900,         # ← ban length in seconds
-    offenses_ttl=1800,        # ← offense counting window
+    ban_duration=300,         # ← ban length in seconds
+    offenses_ttl=900,        # ← offense counting window
+    ban_page="<p>Your IP has been temporarily banned due to excessive requests.</p>", # ← NEW: custom ban page: OPTIONAL
 )
 ```
 
-Rules are automatically sorted longest-first as seen in the code example.
-
 A request to `/api/users/me` will match:
 
-- `/api/users`
-- `/api`
+- /api/users
+- /api
 
 If ANY rule is exceeded → request becomes 429.
 
 **Uses Atomic LUA script:**
 
 ```lua
-    local c = redis.call('INCR', KEYS[1])
-    if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
 ```
 
 Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0.113.5:/api`
@@ -108,9 +107,10 @@ Keys follow the pattern - `rl:{client_ip}:{prefix}`, which is saved as `rl:203.0
 | `ban_threshold`   | int                       | Violations before ban                       |
 | `ban_duration`    | int                       | Ban length in seconds                       |
 | `offenses_ttl`    | int                       | Offense counting window in seconds          |
+| `ban_page`        | str                       | Custom HTML ban page                        |
 
 
-<img width="1919" height="874" alt="image" src="https://github.com/user-attachments/assets/b56e83cd-2e43-4e71-9203-17949950c25e" />
+<img width="1919" height="874" alt="image" src="https://i.ibb.co/pBMt410y/image.png" />
 
 ## Contributing
 Contributions and forks are always welcome! Feel free to adapt and improve for your own needs.
@@ -120,6 +120,3 @@ Contributions and forks are always welcome! Feel free to adapt and improve for y
 [![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
 
 Parts of this code were generated/assisted by AI (Grok).
-
-
-
