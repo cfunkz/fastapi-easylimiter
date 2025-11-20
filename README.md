@@ -131,7 +131,6 @@ if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
 
 <img width="1919" height="873" alt="fastapi-easylimiter screenshot" src="https://github.com/user-attachments/assets/bcfc5a56-f123-4d20-bb88-3e300ac042f7" />
 <img width="1919" height="869" alt="image" src="https://github.com/user-attachments/assets/0991a7fc-29ff-4d25-b897-13f74c33bcf5" />
-<img width="561" height="173" alt="image" src="https://github.com/user-attachments/assets/a50868a0-0e7e-496e-a781-1a23a0b2581f" />
 
 ---
 
@@ -148,4 +147,5 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 ---
 
 *Parts of this code were generated/assisted by AI (Grok).*
+
 
