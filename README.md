@@ -176,7 +176,9 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 
 ---
 
-*Parts of this code were generated/assisted by AI (Claude, Grok).*
+*Some components of this middleware were developed with assistance from AI tools.
+While all logic has been carefully reviewed, it is strongly recommended to thoroughly test the middleware in your environment.*
+
 
 
 
