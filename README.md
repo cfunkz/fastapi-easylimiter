@@ -126,11 +126,11 @@ return {count, reset, exceeded}
 
 ### Redis Key Patterns
 
-| Full Key Pattern                         | Example                              | Purpose                                  |
-| ---------------------------------------- | ------------------------------------ | ---------------------------------------- |
-| `ratelimit:rl:{client_ip}:{prefix}`      | `ratelimit:rl:203.0.113.5:/api`      | Rate-limit counter per IP + route prefix |
-| `ratelimit:ban:{client_ip}`              | `ratelimit:ban:203.0.113.5`          | Temporary ban flag                       |
-| `ratelimit:offenses:{client_ip}`         | `ratelimit:offenses:203.0.113.5`     | Offense counter used for tracking        |
+| Full Key Pattern                       | Example                          | Purpose                                  |
+| -------------------------------------- | -------------------------------- | ---------------------------------------- |
+| `{key_prefix}:rl:{client_ip}:{prefix}` | `ratelimit:rl:203.0.113.5:/api`  | Rate-limit counter per IP + route prefix |
+| `{key_prefix}:ban:{client_ip}`         | `ratelimit:ban:203.0.113.5`      | Temporary ban flag                       |
+| `{key_prefix}:offenses:{client_ip}`    | `ratelimit:offenses:203.0.113.5` | Offense counter used for ban tracking    |
 
 ---
 
@@ -175,3 +175,4 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 ---
 
 *Parts of this code were generated/assisted by AI (Claude, Grok).*
+
