@@ -85,8 +85,8 @@ app.add_middleware(
     ban_threshold=15,         # Violations before ban
     ban_duration=300,         # Ban length in seconds
     offenses_ttl=900,         # Offense counting window
-    ban_page="<p>Your IP has been temporarily banned due to excessive requests.</p>", # OPTIONAL custom HTML
-    rate_page="<p>Too many requests. Please try again later.</p>", # OPTIONAL custom HTML
+    ban_page="<p>Your IP has been temporarily banned.</p>",        # OPTIONAL custom HTML ban page
+    rate_page="<p>Too many requests. Please try again later.</p>", # OPTIONAL custom HTML rate-limit page
 )
 ```
 
@@ -94,11 +94,26 @@ app.add_middleware(
 
 ---
 
-### Redis Lua Script (atomic)
+### Redis Lua Script
 
 ```lua
-local c = redis.call('INCR', KEYS[1])
-if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+
+local count = redis.call("INCR", key)
+local ttl = redis.call("TTL", key)
+
+if count == 1 or ttl < 0 then
+    redis.call("EXPIRE", key, window)
+    ttl = window
+end
+
+local reset = now + ttl
+local exceeded = count > limit and 1 or 0
+
+return {count, reset, exceeded}
 ```
 
 ### Redis Key Patterns
@@ -131,7 +146,12 @@ if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
 
 ## Screenshot
 
-<img width="1919" height="873" alt="fastapi-easylimiter screenshot" src="https://github.com/user-attachments/assets/bcfc5a56-f123-4d20-bb88-3e300ac042f7" />
+<img width="1070" height="571" alt="image" src="https://github.com/user-attachments/assets/4579f130-ac83-457b-8fd1-eda720ce8123" />
+<img width="1128" height="582" alt="image" src="https://github.com/user-attachments/assets/23752a35-5bff-4ed1-bd72-e90fe6c41e00" />
+<img width="542" height="155" alt="image" src="https://github.com/user-attachments/assets/83045e50-e9a6-481e-9b65-69fb4fef6dd8" />
+<img width="546" height="165" alt="image" src="https://github.com/user-attachments/assets/82f28d1c-be71-480a-a23d-3291db6d9571" />
+
+
 
 ---
 
