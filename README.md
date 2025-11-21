@@ -8,7 +8,7 @@
 
 ---
 
-An **ASGI async rate-limiting middleware** for FastAPI with **Redis** or **in-memory caching**, designed to handle **auto-generated routes** (e.g., FastAPI-Users) without decorators, for simplicity and performance.
+An **ASGI async rate-limiting middleware** for FastAPI with **Redis** or **in-memory caching**, designed to handle **auto-generated routes** (e.g., FastAPI-Users) without decorators, for simplicity and ease of use.
 
 ---
 
@@ -175,4 +175,5 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 ---
 
 *Parts of this code were generated/assisted by AI (Claude, Grok).*
+
 
