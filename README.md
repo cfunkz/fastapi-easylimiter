@@ -43,8 +43,8 @@ An **ASGI async rate-limiting middleware** for FastAPI with **Redis** or **in-me
 - **Custom responses**
   - `HTMLResponse` for browser clients
   - `JSONResponse` for API clients
-- CRLF-injection–safe header parsing
-- Allows banning direct connections (no proxy/CF) for dev/testing
+- **CRLF-injection–safe header parsing**
+- **Allows banning direct connections *(no proxy/CF)* for dev/testing**
 ---
 
 ## Installation
@@ -178,6 +178,7 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 
 *Some components of this middleware were developed with assistance from AI tools.
 While all logic has been carefully reviewed, it is strongly recommended to thoroughly test the middleware in your environment.*
+
 
 
 
