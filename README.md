@@ -12,7 +12,7 @@ An **ASGI async rate-limiting middleware** for FastAPI with **Redis** or **in-me
 
 ---
 
-**Cloudflare links updated 21/11/2025**
+**Cloudflare CIDRs updated 21/11/2025**
 
 ## Features
 
@@ -177,6 +177,7 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 ---
 
 *Parts of this code were generated/assisted by AI (Claude, Grok).*
+
 
 
 
