@@ -64,7 +64,7 @@ REDIS_URL = "redis://localhost:6379/0"
 
 # Redis backend (recommended for multi-instance deployments)
 redis_client = redis_async.from_url(REDIS_URL, decode_responses=True)
-backend = AsyncRedisBackend(redis_client)
+backend = AsyncRedisBackend(redis_client, fail_open=False) # Drop connections if Redis is down
 
 # Or for single-instance/local development:
 # backend = InMemoryBackend()
@@ -168,3 +168,4 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 ---
 
 *Parts of this code were generated/assisted by AI (Grok).*
+
