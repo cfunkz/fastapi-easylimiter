@@ -93,7 +93,7 @@ app.add_middleware(
     enable_bans=True,         # OPTIONAL: enable temporary bans
     ban_threshold=10,         # Violations before ban
     ban_duration=300,         # Ban length in seconds
-    offense_ttl=600,         # Offense counting window
+    offense_ttl=600,          # Offense counting window
     ban_page="<p>Your IP has been temporarily banned.</p>",        # OPTIONAL custom HTML ban page
     rate_page="<p>Too many requests. Please try again later.</p>", # OPTIONAL custom HTML rate-limit page
     ban_direct=True           # ONLY SET WHEN RUNNING BAREMETAL NO CF AND NO PROXY
@@ -177,6 +177,7 @@ Contributions and forks are always welcome! Adapt, improve, or extend for your o
 ---
 
 *Parts of this code were generated/assisted by AI (Claude, Grok).*
+
 
 
 
