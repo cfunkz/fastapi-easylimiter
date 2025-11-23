@@ -3,7 +3,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.types import ASGIApp, Scope, Receive, Send
 import redis.asyncio as redis
 import hashlib
-from strategies import FixedWindowStrategy, SlidingWindowStrategy, MovingWindowStrategy
+from .strategies import FixedWindowStrategy, SlidingWindowStrategy, MovingWindowStrategy
 
 __version__ = "0.4.2"
 __all__ = ["RateLimitMiddleware", "FixedWindowStrategy", "SlidingWindowStrategy", "MovingWindowStrategy"]
