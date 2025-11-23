@@ -14,7 +14,7 @@ An **ASGI async rate-limiting middleware** for FastAPI with **Redis**, designed 
 
 ## Features
 
-- Path based rules (`/api/*`, `/auth/*`, exact matches)
+- Path based rules (`/api/*`, `/auth/*`, `/api/users/me`, etc)
 - Fixed, Sliding & Moving window algorithms (Lua)
 - `RateLimit`, `RateLimit-Policy`, `Retry-After` headers
 - Bans with back-off per IP with configurable window
@@ -97,12 +97,11 @@ app.add_middleware(
         "/api/users/me": (3, 30, "fixed"),
     },
     exempt=[],
-    enable_bans=True,
-    ban_offenses=8,
-    ban_window="10m",
-    ban_length="5m",
-    ban_max_length="1d",
+    ban_offenses=15,
+    ban_length="3m",
+    ban_max_length="30m",
     enable_xff=False,
+    site_ban=True
     )
 ```
 
@@ -116,8 +115,8 @@ app.add_middleware(
 | ------------------------------------------| ----------------------------------------- | ----------- | --------------------------------------------- |
 | `rl:Fixe:{hash}:{limit}:{window}`         | `rl:Fixe:a1b2c3d4e5f6a7b8:100:60`         | String      | Fixed-window counter                          |
 | `rl:Slid:{hash}:{limit}:{window}`         | `rl:Slid:a1b2c3d4e5f6a7b8:60:60`          | ZSET        | Sliding window request log                    |
-| `offense:{hash}`                          | `offense:{a1b2c3d4e5f6a7b8}`                     | ZSET        | Offense tracking for ban escalation           |
-| `ban:{hash}`                              | `ban:{a1b2c3d4e5f6a7b8}`                         | String+TTL  | Active ban flag                               |
+| `offense:{hash}`                          | `offense:{a1b2c3d4e5f6a7b8}`              | ZSET        | Offense tracking for ban escalation           |
+| `ban:{hash}`                              | `ban:{a1b2c3d4e5f6a7b8}`                  | String+TTL  | Active ban flag                               |
 
 ---
 
@@ -128,20 +127,22 @@ app.add_middleware(
 | `redis`          | `redis.asyncio.Redis`             | Yes      | Redis async client                   |
 | `rules`          | `Dict[str, Tuple[int, int, str]]` | Yes      | Path → (limit, period, strategy)     |
 | `exempt`         | `Optional[List[str]]`             | No       | Paths that bypass rate limits        |
-| `enable_bans`    | `bool`                            | No       | Enable/disable ban system            |
 | `ban_offenses`   | `int`                             | No       | Offenses before ban triggers         |
-| `ban_window`     | `str`                             | No       | Time window for offense accumulation |
 | `ban_length`     | `str`                             | No       | Initial ban length                   |
 | `ban_max_length` | `str`                             | No       | Maximum exponential ban ceiling      |
 | `enable_xff`     | `bool`                            | No       | Enable X-Forwarded-For support       |
+| `site_ban`       | `bool`                            | No       | Enable site-wide bans or per-endpoint|
 
 ---
+
+## Tests
+Used [Ratelimit Tester](https://github.com/cfunkz/ratelimit-tester) for testing rate-limit atomicity.
 
 ## Screenshot
 
 <img width="1070" height="571" alt="image" src="https://github.com/user-attachments/assets/4579f130-ac83-457b-8fd1-eda720ce8123" />
 <img width="1128" height="582" alt="image" src="https://github.com/user-attachments/assets/23752a35-5bff-4ed1-bd72-e90fe6c41e00" />
-
+<img width="448" height="745" alt="image" src="https://github.com/user-attachments/assets/1f8c415a-5baf-4635-9408-2ced64a75b0c" />
 ---
 
 ## Contributing
