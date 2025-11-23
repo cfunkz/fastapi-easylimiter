@@ -1,3 +1,4 @@
+# strategies.py
 import hashlib
 from typing import Tuple
 import redis.asyncio as redis
@@ -27,19 +28,19 @@ class FixedWindowStrategy(BaseRedisStrategy):
     if count < limit then
         count = redis.call('INCR', key)
         redis.call('EXPIREAT', key, window_end)
-        return {1, count, limit - count, window_end}
+        return {1, count, limit - count, window_end, now}
     end
-    return {0, count, 0, window_end}
+    return {0, count, 0, window_end, now}
     """
 
     def __init__(self, redis_client: redis.Redis):
         super().__init__(redis_client)
         self.lua_script = self.redis.register_script(self.LUA_SCRIPT)
 
-    async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int]:
+    async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int, int]:
         key = self._key(identifier, limit, window)
         result = await self.lua_script(keys=[key], args=[limit, window])
-        return result[0] == 1, int(result[2]), int(result[3])
+        return result[0] == 1, int(result[2]), int(result[3]), int(result[4])
 
 
 class SlidingWindowStrategy(BaseRedisStrategy):
@@ -58,22 +59,22 @@ class SlidingWindowStrategy(BaseRedisStrategy):
         redis.call('EXPIRE', key, window + 10)
         local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
         local reset = oldest[2] and tonumber(oldest[2]) + window or now + window
-        return {1, limit - count - 1, math.floor(reset)}
+        return {1, limit - count - 1, math.floor(reset), now}
     end
     
     local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
     local reset = oldest[2] and tonumber(oldest[2]) + window or now + window
-    return {0, 0, math.floor(reset)}
+    return {0, 0, math.floor(reset), now}
     """
 
     def __init__(self, redis_client: redis.Redis):
         super().__init__(redis_client)
         self.lua_script = self.redis.register_script(self.LUA_SCRIPT)
 
-    async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int]:
+    async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int, int]:
         key = self._key(identifier, limit, window)
         result = await self.lua_script(keys=[key], args=[limit, window])
-        return result[0] == 1, int(result[1]), int(result[2])
+        return result[0] == 1, int(result[1]), int(result[2]), int(result[3])
 
 
 class MovingWindowStrategy(BaseRedisStrategy):
@@ -113,18 +114,18 @@ class MovingWindowStrategy(BaseRedisStrategy):
         local remaining = limit - weighted_count
         local reset = (current_window + 1) * window
         
-        return {1, math.max(0, remaining), reset}
+        return {1, math.max(0, remaining), reset, now}
     end
     
     local reset = (current_window + 1) * window
-    return {0, 0, reset}
+    return {0, 0, reset, now}
     """
 
     def __init__(self, redis_client: redis.Redis):
         super().__init__(redis_client)
         self.lua_script = self.redis.register_script(self.LUA_SCRIPT)
 
-    async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int]:
+    async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int, int]:
         key = self._key(identifier, limit, window)
         result = await self.lua_script(keys=[key], args=[limit, window])
-        return result[0] == 1, int(result[1]), int(result[2])
+        return result[0] == 1, int(result[1]), int(result[2]), int(result[3])

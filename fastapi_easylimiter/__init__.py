@@ -5,7 +5,7 @@ import redis.asyncio as redis
 import hashlib
 from .strategies import FixedWindowStrategy, SlidingWindowStrategy, MovingWindowStrategy
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"
 __all__ = ["RateLimitMiddleware", "FixedWindowStrategy", "SlidingWindowStrategy", "MovingWindowStrategy"]
 
 STRATEGY_MAP = {"fixed": FixedWindowStrategy, "sliding": SlidingWindowStrategy, "moving": MovingWindowStrategy}
@@ -57,33 +57,30 @@ class RateLimitMiddleware:
         self.initial_ban = parse_duration(ban_length)
         self.max_ban = parse_duration(ban_max_length)
         self.trust_xff = trust_xff
+        
+        # Pre-register Lua script for ban checking
+        self._ban_check_script = self.redis.register_script("""
+            local ban_key = KEYS[1]
+            local exists = redis.call('GET', ban_key)
+            if exists then
+                return {1, redis.call('TTL', ban_key)}
+            end
+            return {0, 0}
+        """)
 
     def _get_identifier(self, scope: Scope) -> str:
-        """
-        Extract client identifier for rate limiting.
-        
-        If trust_xff=True, uses X-Forwarded-For header (first IP in chain).
-        WARNING: Only enable trust_xff behind a trusted reverse proxy that
-        properly sets/strips X-Forwarded-For headers. Untrusted XFF allows
-        trivial rate limit bypass via header spoofing.
-        """
         if self.trust_xff:
             headers_dict = dict(scope.get("headers", []))
             xff = headers_dict.get(b"x-forwarded-for", b"").decode().strip()
             if xff:
-                # Take first IP in chain (client IP before any proxies)
                 client_ip = xff.split(",")[0].strip()
                 if client_ip:
                     return client_ip
-        
-        # Fallback to direct connection IP
         return scope["client"][0] if scope.get("client") else "unknown"
 
-    # Normalize and sort paths for exemption
     def _normalize_paths(self, paths: List[str]) -> List[Tuple[str, bool]]:
         return [(p[:-2].rstrip("/") if p.endswith("/*") else p.rstrip("/"), p.endswith("/*")) for p in paths]
 
-    # Normalize and sort rules
     def _normalize_rules(self, rules: Dict[str, Tuple[int, int, str]]) -> List[Dict]:
         normalized = []
         for path, (limit, period, strategy_name) in rules.items():
@@ -103,28 +100,20 @@ class RateLimitMiddleware:
         
         return sorted(normalized, key=lambda x: (not x["wildcard"], len(x["prefix"]) if x["wildcard"] else -len(x["prefix"])))
 
-    # Path matching helper
     def _matches(self, path: str, pattern: str, wildcard: bool) -> bool:
         return path.startswith(pattern) if wildcard else path == pattern
 
     def _hash(self, identifier: str) -> str:
         return hashlib.sha256(identifier.encode()).hexdigest()[:16]
 
-    # Check if identifier is currently banned
     async def _check_ban(self, identifier: str) -> Optional[int]:
         ban_key = f"ban:{self._hash(identifier)}"
-        if await self.redis.get(ban_key):
-            return await self.redis.ttl(ban_key)
-        return None
+        result = await self._ban_check_script(keys=[ban_key])
+        return int(result[1]) if result[0] == 1 else None
 
-    # Record offense and apply ban if threshold exceeded
-    async def _record_offense(self, identifier: str) -> Optional[int]:
+    async def _record_offense(self, identifier: str, now: int) -> Optional[int]:
         hashed = self._hash(identifier)
         offense_key = f"offense:{hashed}"
-        
-        # Get current Redis time for consistency
-        redis_time = await self.redis.time()
-        now = int(redis_time[0])
         
         pipe = self.redis.pipeline(transaction=False)
         pipe.zadd(offense_key, {str(now): now})
@@ -133,7 +122,7 @@ class RateLimitMiddleware:
         pipe.zcard(offense_key)
         results = await pipe.execute()
         
-        offense_count = results[3]  # Get count from pipeline result
+        offense_count = results[3]
         
         if offense_count >= self.ban_after:
             level = offense_count - self.ban_after + 1
@@ -142,7 +131,6 @@ class RateLimitMiddleware:
             return int(ban_duration)
         return None
 
-    # Error response helper
     async def _error_response(self, scope: Scope, status: int, retry: int, msg: str, limit: int = 0, period: int = 0) -> Response:
         headers = {"Retry-After": str(retry)}
         
@@ -165,13 +153,16 @@ class RateLimitMiddleware:
         html = ERROR_PAGES[status].format(retry=retry) if status == 429 else ERROR_PAGES[403]
         return HTMLResponse(html, status_code=status, headers=headers)
 
-    # WebSocket close helper
     async def _websocket_close(self, send: Send, code: int, reason: str) -> None:
-        """Send WebSocket close frame and disconnect."""
+        reason_bytes = reason.encode('utf-8')
+        if len(reason_bytes) > 123:
+            reason_bytes = reason_bytes[:120] + b'...'
+            reason = reason_bytes.decode('utf-8', errors='ignore')
+        
         await send({
             "type": "websocket.close",
             "code": code,
-            "reason": reason[:123]  # Max 123 bytes for close reason
+            "reason": reason
         })
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -181,14 +172,13 @@ class RateLimitMiddleware:
 
         path = scope["path"].rstrip("/")
         
-        # Fast path: exempt routes
         if any(self._matches(path, prefix, wc) for prefix, wc in self.exempt):
             await self.app(scope, receive, send)
             return
 
         identifier = self._get_identifier(scope)
 
-        # Check ban
+        # Check ban (single Lua call)
         if self.enable_bans:
             ban_ttl = await self._check_ban(identifier)
             if ban_ttl:
@@ -199,33 +189,29 @@ class RateLimitMiddleware:
                 await response(scope, receive, send)
                 return
 
-        # Get matching rules
         rules_to_apply = [r for r in self.rules if self._matches(path, r["prefix"], r["wildcard"])]
         
         if not rules_to_apply:
             await self.app(scope, receive, send)
             return
 
-        # Check all rules
+        # Single pass through rules with time from strategy
         best_remaining = float("inf")
         best_headers = {}
+        now = None
         
-        # Get Redis time once for all calculations
-        redis_time = await self.redis.time()
-        now = int(redis_time[0])
-        
-        # Start checking each rule
         for rule in rules_to_apply:
             strategy = rule["strategy_cls"](self.redis)
-            allowed, remaining, reset_ts = await strategy.hit(identifier, rule["limit"], rule["period"])
+            allowed, remaining, reset_ts, redis_now = await strategy.hit(identifier, rule["limit"], rule["period"])
             
-            # If any rule is exceeded, block the request
+            if now is None:
+                now = redis_now
+            
             if not allowed:
                 reset_seconds = max(1, int(reset_ts - now))
                 
-                # Handle bans
                 if self.enable_bans:
-                    ban_duration = await self._record_offense(identifier)
+                    ban_duration = await self._record_offense(identifier, now)
                     if ban_duration:
                         if scope["type"] == "websocket":
                             await self._websocket_close(send, 1008, f"Banned: {ban_duration // 60}m abuse")
@@ -233,8 +219,7 @@ class RateLimitMiddleware:
                         response = await self._error_response(scope, 403, ban_duration, f"Banned for {ban_duration // 60} minutes")
                         await response(scope, receive, send)
                         return
-                    
-                # Handle rate limit exceeded
+                
                 if scope["type"] == "websocket":
                     await self._websocket_close(send, 1008, f"Rate limited: retry in {reset_seconds}s")
                     return
@@ -243,7 +228,6 @@ class RateLimitMiddleware:
                 await response(scope, receive, send)
                 return
             
-            # Track best remaining for headers
             if remaining < best_remaining:
                 best_remaining = remaining
                 reset_seconds = max(1, int(reset_ts - now))
@@ -252,9 +236,7 @@ class RateLimitMiddleware:
                     "RateLimit": f"limit={rule['limit']}, remaining={remaining}, reset={reset_seconds}",
                 }
 
-        # WebSocket: pass through (headers added during handshake only)
         if scope["type"] == "websocket":
-            # Add headers to handshake response
             async def send_with_headers(message):
                 if message["type"] == "websocket.accept" and best_headers:
                     headers = list(message.get("headers", []))
@@ -266,16 +248,12 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send_with_headers)
             return
 
-        # HTTP: pass through and add headers
         async def send_with_headers(message):
-            # Add rate limit headers to response start
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
-                # Add best rate limit headers
                 for k, v in best_headers.items():
                     headers.append((k.encode(), v.encode()))
                 message["headers"] = headers
             await send(message)
 
-        # Final call to app with modified send
         await self.app(scope, receive, send_with_headers)

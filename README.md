@@ -30,6 +30,44 @@ An **ASGI async rate-limiting middleware** for FastAPI with **Redis**, designed 
 
 - In-memory option
 
+## Rule Matching
+
+### Single Rule
+Use these when you want a rule to apply to one specific endpoint only.
+```
+"/api/users/me": (20, 60, "sliding")
+```
+
+This applies only to requests where the normalized path is exactly:
+```
+/api/users/me
+```
+
+Nothing else matches.
+Not `/api/users/me/profile`, not `/api/users/me/123`, not `/api/users`.
+
+### Prefix Wildcards
+A rule ending with `/*` applies to all sub-paths under a given prefix, as one shared rate-limit bucket.
+```
+"/api/*": (100, 60, "sliding")
+```
+
+This matches:
+```
+/api
+/api/
+/api/users
+/api/users/123
+/api/anything/here/nested
+```
+
+### How Rule applies
+Rules are normalized and sorted so that:
+
+- Exact matches come before wildcard matches.
+- Longer prefixes take priority over shorter prefixes (so `/api/users/*` overrides `/api/*`)
+- A request may match multiple rules, if so, ALL matching rules run, and the strictest one determines whether the request is allowed.
+
 ## Installation
 
 ```bash
