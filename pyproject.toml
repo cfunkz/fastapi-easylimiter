@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=65", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-easylimiter"
+version = "0.4.0"
+description = "Async rate limiter for FastAPI with Redis or in-memory backend and advanced proxy-aware security"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+
+authors = [
+    { name = "cfunkz", email = "cfunkz@duck.com" }
+]
+
+keywords = [
+    "fastapi",
+    "rate-limit",
+    "ratelimiter",
+    "rate limiting",
+    "dos protection",
+    "ddos",
+    "security",
+    "middleware",
+    "asyncio",
+    "redis",
+    "fastapi middleware",
+    "abuse prevention",
+    "throttling",
+]
+
+classifiers = [
+    "Framework :: FastAPI",
+    "Framework :: AsyncIO",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+    "Topic :: Software Development :: Libraries",
+    "Intended Audience :: Developers",
+    "Development Status :: 4 - Beta",
+]
+
+dependencies = [
+    "fastapi>=0.110",
+    "starlette>=0.36",
+    "redis>=5.0.0"
+]
+
+[project.optional-dependencies]
+redis = ["redis>=5.0.0"]
+dev = ["pytest", "ruff", "black", "httpx"]
+
+[project.urls]
+Homepage = "https://github.com/cfunkz/fastapi-easylimiter"
+Documentation = "https://github.com/cfunkz/fastapi-easylimiter"
+Source = "https://github.com/cfunkz/fastapi-easylimiter"
+Issues = "https://github.com/cfunkz/fastapi-easylimiter/issues"
+
+[tool.setuptools.packages.find]
+include = ["fastapi_easylimiter*"]
