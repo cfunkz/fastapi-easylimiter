@@ -95,7 +95,7 @@ app.add_middleware(
         "/api/auth/*": (3, 1, "fixed"),
         "/api/users/me": (1, 5, "fixed"),
     },
-    exempt=["/docs],
+    exempt=["/docs"],
     ban_offenses=15,
     ban_length="3m",
     ban_max_length="30m",
