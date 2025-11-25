@@ -98,11 +98,20 @@ class RateLimitMiddleware:
                 "strategy": strategy,
             })
         
-        return sorted(normalized, key=lambda x: (not x["wildcard"], len(x["prefix"]) if x["wildcard"] else -len(x["prefix"])))
+        # Sort: exact matches first (not wildcard), then by prefix length (longest first)
+        return sorted(
+            normalized, 
+            key=lambda x: (x["wildcard"], -len(x["prefix"]))
+        )
 
     def _matches(self, path: str, pattern: str, wildcard: bool) -> bool:
         """Check if path matches rule pattern."""
-        return path.startswith(pattern) if wildcard else path == pattern
+        if wildcard:
+            # Wildcard matches if path starts with prefix or is exactly the prefix
+            return path == pattern or path.startswith(pattern + "/")
+        else:
+            # Exact match only
+            return path == pattern
 
     async def _error_response(
         self, scope: Scope, status: int, retry: int, limit: int = 0, period: int = 0
@@ -150,25 +159,31 @@ class RateLimitMiddleware:
 
         path = scope["path"].rstrip("/")
         
+        # Check exemptions
         if any(self._matches(path, prefix, wc) for prefix, wc in self.exempt):
             await self.app(scope, receive, send)
             return
 
         identifier = self._get_identifier(scope)
+        
+        # Find ALL matching rules
         rules_to_apply = [r for r in self.rules if self._matches(path, r["prefix"], r["wildcard"])]
         
         if not rules_to_apply:
             await self.app(scope, receive, send)
             return
 
+        # Track best remaining for headers
         best_remaining = float("inf")
         best_headers = {}
         
+        # Check all matching rules
         for rule in rules_to_apply:
-            allowed, remaining, reset, ban_ttl, now = await rule["strategy"].hit(
+            allowed, remaining, reset_time, ban_ttl, retry_time = await rule["strategy"].hit(
                 identifier, rule["limit"], rule["period"]
             )
             
+            # If banned, reject immediately
             if ban_ttl > 0:
                 if scope["type"] == "websocket":
                     await self._websocket_close(send, 1008, f"Banned for {ban_ttl}s")
@@ -177,8 +192,13 @@ class RateLimitMiddleware:
                 await response(scope, receive, send)
                 return
             
+            # If rate limited, reject immediately
             if not allowed:
-                retry = max(1, reset - now)
+                # Calculate retry time from reset_time (absolute timestamp)
+                import time
+                now = int(time.time())
+                retry = max(1, reset_time - now)
+                
                 if scope["type"] == "websocket":
                     await self._websocket_close(send, 1008, f"Rate limited. Retry in {retry}s")
                     return
@@ -186,14 +206,18 @@ class RateLimitMiddleware:
                 await response(scope, receive, send)
                 return
             
+            # Track best remaining for headers
             if remaining < best_remaining:
                 best_remaining = remaining
-                retry = max(1, reset - now)
+                import time
+                now = int(time.time())
+                retry = max(1, reset_time - now)
                 best_headers = {
                     "RateLimit-Policy": f"{rule['limit']};w={rule['period']}",
                     "RateLimit": f"limit={rule['limit']}, remaining={remaining}, reset={retry}",
                 }
 
+        # All rules passed, add headers and proceed
         async def send_with_headers(message):
             if message["type"] in ("http.response.start", "websocket.accept") and best_headers:
                 headers = list(message.get("headers", []))

@@ -1,9 +1,11 @@
+# strategies.py
 import hashlib
 import redis.asyncio as redis
 from typing import Optional, Tuple
 
+
 class BaseRedisStrategy:
-    """Base class for Redis-based rate limiting strategies."""
+    """Base class for Redis-backed rate limiting strategies with integrated ban logic."""
 
     def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, ban_counter: int = 3600, site_ban: bool = True):
         self.redis = redis_client
@@ -32,7 +34,7 @@ class BaseRedisStrategy:
 
 
 class FixedWindowStrategy(BaseRedisStrategy):
-    """Fixed-window"""
+    """Fixed-window rate limiting with atomic ban doubling using a single meta key."""
 
     LUA_SCRIPT = """
     local rl,ban,meta=KEYS[1],KEYS[2],KEYS[3]
@@ -98,7 +100,13 @@ class FixedWindowStrategy(BaseRedisStrategy):
 
 
 class MovingWindowStrategy(BaseRedisStrategy):
-    """Moving window"""
+    """Moving window (sliding window counter) with atomic ban doubling using a single meta key.
+    
+    Uses precise weighted averaging to smooth traffic across window boundaries:
+    - Current window is weighted by time elapsed in current window
+    - Previous window is weighted by time remaining from previous window
+    - Formula: count = (prev * (1 - progress)) + current
+    """
 
     LUA_SCRIPT = """
     local base,ban,meta=KEYS[1],KEYS[2],KEYS[3]
