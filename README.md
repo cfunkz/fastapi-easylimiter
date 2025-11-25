@@ -34,7 +34,7 @@ An **ASGI async rate-limiting middleware** for FastAPI with **Redis**, designed 
 ### Single Rule
 Use these when you want a rule to apply to one specific endpoint only.
 ```python
-"/api/users/me": (20, 60, "sliding")
+"/api/users/me": (20, 60, "fixed")
 ```
 
 This applies only to requests where the normalized path is exactly:
@@ -48,7 +48,7 @@ Not `/api/users/me/profile`, not `/api/users/me/123`, not `/api/users`.
 ### Prefix Wildcards
 A rule ending with `/*` applies to all sub-paths under a given prefix, as one shared rate-limit bucket.
 ```python
-"/api/*": (100, 60, "sliding")
+"/api/*": (100, 60, "moving")
 ```
 
 This matches:

@@ -1,195 +1,180 @@
-# strategies.py
 import hashlib
-from typing import Tuple, Optional
 import redis.asyncio as redis
-
+from typing import Optional, Tuple
 
 class BaseRedisStrategy:
-    """Base class for Redis-backed rate limiting strategies with integrated ban logic."""
-    
-    def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, site_ban: bool = True):
+    """Base class for Redis-based rate limiting strategies."""
+
+    def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, ban_counter: int = 3600, site_ban: bool = True):
         self.redis = redis_client
         self.ban_after = ban_after
         self.initial_ban = initial_ban
         self.max_ban = max_ban
+        self.ban_counter = ban_counter
         self.site_ban = site_ban
 
     def _key(self, identifier: str, limit: int, window: int) -> str:
-        """Generate consistent key for rate limit and offense tracking."""
         hashed = hashlib.sha256(identifier.encode()).hexdigest()[:16]
         strategy = self.__class__.__name__[:4].lower()
         return f"rl:{strategy}:{hashed}:{limit}:{window}"
-    
+
     def _ban_key(self, identifier: str, limit: Optional[int] = None, window: Optional[int] = None) -> str:
-        """Generate ban key - site-wide or per-endpoint based on site_ban setting."""
         hashed = hashlib.sha256(identifier.encode()).hexdigest()[:16]
         if self.site_ban:
-            # Site-wide ban: same key for all endpoints
             return f"ban:{hashed}"
         else:
-            # Per-endpoint ban: includes limit and window
             strategy = self.__class__.__name__[:4].lower()
             return f"rl:{strategy}:{hashed}:{limit}:{window}:ban"
 
+    def _meta_key(self, rl_key: str) -> str:
+        """Single meta key to store both offenses and consecutive ban count."""
+        return f"{rl_key}:meta"
+
 
 class FixedWindowStrategy(BaseRedisStrategy):
-    """
-    Fixed-window rate limiting with atomic ban integration.
-    All operations (ban check, rate limit, offense tracking, ban application) in single Lua script.
-    """
-    
+    """Fixed-window"""
+
     LUA_SCRIPT = """
-    local rl_key = KEYS[1]
-    local ban_key = KEYS[2]
-    local offense_key = KEYS[3]
+    local rl,ban,meta=KEYS[1],KEYS[2],KEYS[3]
+    local lim,win,ba,ib,mb,bc_ttl=tonumber(ARGV[1]),tonumber(ARGV[2]),tonumber(ARGV[3]),tonumber(ARGV[4]),tonumber(ARGV[5]),tonumber(ARGV[6])
+    local now=tonumber(redis.call('TIME')[1])
     
-    local limit = tonumber(ARGV[1])
-    local window = tonumber(ARGV[2])
-    local ban_after = tonumber(ARGV[3])
-    local initial_ban = tonumber(ARGV[4])
-    local max_ban = tonumber(ARGV[5])
-    
-    local now = tonumber(redis.call('TIME')[1])
-    local window_start = now - (now % window)
-    local window_end = window_start + window
-    
-    -- STEP 1: Check if banned (atomic check)
-    local ban_ttl = redis.call('TTL', ban_key)
-    if ban_ttl > 0 then
-        return {0, 0, 0, ban_ttl, window_end, now}
+    -- Calculate window start with integer division for precision
+    local ws=now-(now%win)
+    local reset=ws+win
+
+    -- Check if banned
+    local bt=redis.call('TTL',ban)
+    if bt>0 then 
+        return {0,0,reset,bt,now+bt}
     end
+
+    -- Get current count
+    local c=tonumber(redis.call('GET',rl) or '0')
     
-    -- STEP 2: Check rate limit
-    local count = tonumber(redis.call('GET', rl_key) or '0')
-    
-    if count < limit then
-        -- Allow request
-        local new_count = redis.call('INCR', rl_key)
-        redis.call('EXPIREAT', rl_key, window_end)
-        return {1, new_count, limit - new_count, 0, window_end, now}
-    else
-        -- STEP 3: Rate limit exceeded - record offense atomically
-        local offenses = redis.call('INCR', offense_key)
-        redis.call('EXPIRE', offense_key, window)
-        
-        -- STEP 4: Check if ban threshold reached and apply ban atomically
-        if offenses >= ban_after then
-            local level = offenses - ban_after + 1
-            local duration = math.min(initial_ban * (2 ^ (level - 1)), max_ban)
-            redis.call('SET', ban_key, '1', 'EX', duration)
-            return {0, count, 0, duration, window_end, now}
-        end
-        
-        return {0, count, 0, 0, window_end, now}
+    -- Allow request if under limit
+    if c<lim then
+        local nc=redis.call('INCR',rl)
+        redis.call('EXPIREAT',rl,reset)
+        return {1,lim-nc,reset,0,reset}
     end
+
+    -- Rate limit exceeded - track offense
+    local o=tonumber(redis.call('HINCRBY',meta,'off',1))
+    redis.call('EXPIRE',meta,win*2)
+
+    -- Check if should ban
+    if o>=ba then
+        local bc=tonumber(redis.call('HINCRBY',meta,'bc',1))
+        -- Exponential backoff: initial * 2^(consecutive_bans - 1), capped at max
+        local d=math.min(ib*math.pow(2,bc-1),mb)
+        redis.call('SET',ban,'1','EX',d)
+        redis.call('HSET',meta,'off',0)
+        -- Ensure meta persists long enough to track ban counter
+        local meta_expire=math.max(d,bc_ttl)
+        redis.call('EXPIRE',meta,meta_expire)
+        return {0,0,reset,d,now+d}
+    end
+
+    -- Rate limited but not banned yet
+    return {0,0,reset,0,reset}
     """
 
-    def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, site_ban: bool = True):
-        super().__init__(redis_client, ban_after, initial_ban, max_ban, site_ban)
+    def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, ban_counter: int = 3600, site_ban: bool = True):
+        super().__init__(redis_client, ban_after, initial_ban, max_ban, ban_counter, site_ban)
         self.lua = self.redis.register_script(self.LUA_SCRIPT)
 
     async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int, int, int]:
-        """
-        Returns: (allowed, remaining, reset_time, ban_ttl, now)
-        All operations are atomic within single Lua execution.
-        """
         rl_key = self._key(identifier, limit, window)
         ban_key = self._ban_key(identifier, limit, window)
-        offense_key = f"{rl_key}:off"
-        
+        meta_key = self._meta_key(rl_key)
+
         result = await self.lua(
-            keys=[rl_key, ban_key, offense_key],
-            args=[limit, window, self.ban_after, self.initial_ban, self.max_ban]
+            keys=[rl_key, ban_key, meta_key],
+            args=[limit, window, self.ban_after, self.initial_ban, self.max_ban, self.ban_counter]
         )
-        
-        allowed = result[0] == 1
-        remaining = int(result[2])
-        reset = int(result[4])
-        ban_ttl = int(result[3])
-        now = int(result[5])
-        
-        return allowed, remaining, reset, ban_ttl, now
+        # Return: (allowed, remaining, reset_time, ban_ttl, retry_after)
+        return result[0]==1, int(result[1]), int(result[2]), int(result[3]), int(result[4])
+
 
 class MovingWindowStrategy(BaseRedisStrategy):
-    """
-    Moving window (sliding window counter) with atomic ban integration.
-    Uses weighted average of current and previous window counts.
-    """
-    
+    """Moving window"""
+
     LUA_SCRIPT = """
-    local base_key = KEYS[1]
-    local ban_key = KEYS[2]
-    local offense_key = KEYS[3]
+    local base,ban,meta=KEYS[1],KEYS[2],KEYS[3]
+    local lim,win,ba,ib,mb,bc_ttl=tonumber(ARGV[1]),tonumber(ARGV[2]),tonumber(ARGV[3]),tonumber(ARGV[4]),tonumber(ARGV[5]),tonumber(ARGV[6])
+    local now=tonumber(redis.call('TIME')[1])
     
-    local limit = tonumber(ARGV[1])
-    local window = tonumber(ARGV[2])
-    local ban_after = tonumber(ARGV[3])
-    local initial_ban = tonumber(ARGV[4])
-    local max_ban = tonumber(ARGV[5])
-    
-    local now = tonumber(redis.call('TIME')[1])
-    local current_window = math.floor(now / window)
-    local prev_window = current_window - 1
-    
-    local current_key = base_key .. ':' .. current_window
-    local prev_key = base_key .. ':' .. prev_window
-    local reset = (current_window + 1) * window
-    
-    -- STEP 1: Check if banned
-    local ban_ttl = redis.call('TTL', ban_key)
-    if ban_ttl > 0 then
-        return {0, 0, 0, ban_ttl, reset, now}
+    -- Calculate current window number and keys
+    local cw=math.floor(now/win)
+    local ck,pk=base..':'..cw,base..':'..(cw-1)
+    local reset=(cw+1)*win
+
+    -- Check if banned
+    local bt=redis.call('TTL',ban)
+    if bt>0 then 
+        return {0,0,reset,bt,now+bt}
     end
+
+    -- Get current and previous window counts
+    local curr=tonumber(redis.call('GET',ck) or '0')
+    local prev=tonumber(redis.call('GET',pk) or '0')
     
-    -- STEP 2: Calculate weighted count
-    local curr = tonumber(redis.call('GET', current_key) or '0')
-    local prev = tonumber(redis.call('GET', prev_key) or '0')
-    local elapsed = now % window
-    local weight = (window - elapsed) / window
-    local weighted_count = math.floor(prev * weight + curr)
+    -- Calculate progress through current window (0.0 to 1.0)
+    local progress=(now%win)/win
     
-    if weighted_count < limit then
-        -- Allow request
-        local new_curr = redis.call('INCR', current_key)
-        redis.call('EXPIRE', current_key, window * 2)
-        weighted_count = math.floor(prev * weight + new_curr)
-        local remaining = limit - weighted_count
-        return {1, math.max(0, remaining), reset, 0, reset, now}
-    else
-        -- STEP 3: Record offense
-        local offenses = redis.call('INCR', offense_key)
-        redis.call('EXPIRE', offense_key, window * 2)
+    -- Weighted count: previous window decays linearly, current window grows
+    -- This provides smooth rate limiting across window boundaries
+    local weighted_count=prev*(1-progress)+curr
+
+    -- Allow request if under limit
+    if weighted_count<lim then
+        local nc=redis.call('INCR',ck)
+        redis.call('EXPIRE',ck,win*2)
         
-        -- STEP 4: Apply ban if threshold reached
-        if offenses >= ban_after then
-            local level = offenses - ban_after + 1
-            local duration = math.min(initial_ban * (2 ^ (level - 1)), max_ban)
-            redis.call('SET', ban_key, '1', 'EX', duration)
-            return {0, 0, 0, duration, reset, now}
-        end
+        -- Recalculate with new current count for accurate remaining
+        local new_weighted=prev*(1-progress)+nc
+        local remaining=math.max(0,lim-new_weighted)
         
-        return {0, 0, reset, 0, reset, now}
+        -- Round remaining down to nearest integer for client display
+        remaining=math.floor(remaining)
+        
+        return {1,remaining,reset,0,reset}
     end
+
+    -- Rate limit exceeded - track offense
+    local o=tonumber(redis.call('HINCRBY',meta,'off',1))
+    redis.call('EXPIRE',meta,win*2)
+
+    -- Check if should ban
+    if o>=ba then
+        local bc=tonumber(redis.call('HINCRBY',meta,'bc',1))
+        -- Exponential backoff: initial * 2^(consecutive_bans - 1), capped at max
+        local d=math.min(ib*math.pow(2,bc-1),mb)
+        redis.call('SET',ban,'1','EX',d)
+        redis.call('HSET',meta,'off',0)
+        -- Ensure meta persists long enough to track ban counter
+        local meta_expire=math.max(d,bc_ttl)
+        redis.call('EXPIRE',meta,meta_expire)
+        return {0,0,reset,d,now+d}
+    end
+
+    -- Rate limited but not banned yet
+    return {0,0,reset,0,reset}
     """
 
-    def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, site_ban: bool = True):
-        super().__init__(redis_client, ban_after, initial_ban, max_ban, site_ban)
+    def __init__(self, redis_client: redis.Redis, ban_after: int = 8, initial_ban: int = 300, max_ban: int = 86400, ban_counter: int = 3600, site_ban: bool = True):
+        super().__init__(redis_client, ban_after, initial_ban, max_ban, ban_counter, site_ban)
         self.lua = self.redis.register_script(self.LUA_SCRIPT)
 
     async def hit(self, identifier: str, limit: int, window: int) -> Tuple[bool, int, int, int, int]:
         rl_key = self._key(identifier, limit, window)
         ban_key = self._ban_key(identifier, limit, window)
-        offense_key = f"{rl_key}:off"
-        
+        meta_key = self._meta_key(rl_key)
+
         result = await self.lua(
-            keys=[rl_key, ban_key, offense_key],
-            args=[limit, window, self.ban_after, self.initial_ban, self.max_ban]
+            keys=[rl_key, ban_key, meta_key],
+            args=[limit, window, self.ban_after, self.initial_ban, self.max_ban, self.ban_counter]
         )
-        
-        allowed = result[0] == 1
-        remaining = int(result[1])
-        reset = int(result[4])
-        ban_ttl = int(result[3])
-        now = int(result[5])
-        
-        return allowed, remaining, reset, ban_ttl, now
+        # Return: (allowed, remaining, reset_time, ban_ttl, retry_after)
+        return result[0]==1, int(result[1]), int(result[2]), int(result[3]), int(result[4])
