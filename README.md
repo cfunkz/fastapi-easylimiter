@@ -7,12 +7,11 @@
 ---
 
 An **ASGI async rate-limiting middleware** for FastAPI with **Redis**, designed to handle **auto-generated routes** (e.g., FastAPI-Users) without decorators, for simplicity and ease of use.
----
 
 ## Features
 
 - Path based rules (`/api/*`, `/auth/*`, `/api/users/me`, etc)
-- Fixed, Sliding & Moving window algorithms (Lua)
+- Fixed & Moving window algorithms (Lua)
 - `RateLimit`, `RateLimit-Policy`, `Retry-After` headers
 - ASGI async middleware for FastAPI/Starlette
 - Asyncio Redis support
@@ -25,8 +24,9 @@ An **ASGI async rate-limiting middleware** for FastAPI with **Redis**, designed 
 ## TODO
 
 - In-memory option
-- Forwarded-For handling
+- X-Forwarded-For and X-Real-IP handling
 - Better websocket support
+- User specific banning
 ---
 
 ## Rule Matching
@@ -91,9 +91,9 @@ app.add_middleware(
     redis=redis,
     rules={
         "/*": (200, 60, "moving"),           
-        "/api/*": (10, 1, "sliding"),
-        "/api/auth/*": (3, 1, "sliding"),
-        "/api/users/me": (3, 30, "fixed"),
+        "/api/*": (10, 1, "moving"),
+        "/api/auth/*": (3, 1, "fixed"),
+        "/api/users/me": (1, 5, "fixed"),
     },
     exempt=[],
     ban_offenses=15,
@@ -112,7 +112,6 @@ app.add_middleware(
 | Key Pattern                                   | Example                                 | Used For                                           |
 | --------------------------------------------- | --------------------------------------- | -------------------------------------------------- |
 | `rl:fixe:{hash}:{limit}:{window}`             | `rl:fixe:a1b2c3d4e5f6a7b8:100:60`       | Fixed-window counter                               |
-| `rl:slid:{hash}:{limit}:{window}`             | `rl:slid:a1b2c3d4e5f6a7b8:60:60`        | Sliding window request log                         |
 | `rl:movi:{hash}:{limit}:{window}:{window_id}` | `rl:movi:a1b2c3d4e5f6a7b8:100:60:12345` | Moving window per-subwindow counter                |
 | `{rl_key}:meta`                               | `rl:fixe:a1b2c3d4e5f6a7b8:100:60:meta`  | Stores both: `offenses` & `ban_count` for doubling |
 | `ban:{hash}`                                  | `ban:a1b2c3d4e5f6a7b8`                  | Active ban flag                                    |
@@ -123,7 +122,7 @@ app.add_middleware(
 | ---------------- | --------------------------------- | -------- | ------------------------------------ |
 | `redis`          | `redis.asyncio.Redis`             | Yes      | Redis async client                   |
 | `rules`          | `Dict[str, Tuple[int, int, str]]` | Yes      | Path → (limit, period, strategy)     |
-| `exempt`         | `Optional[List[str]]`             | No       | Paths that bypass rate limits        |
+| `exempt`         | `List[str]`                       | No       | Paths that bypass rate limits        |
 | `ban_offenses`   | `int`                             | No       | Offenses before ban triggers         |
 | `ban_length`     | `str`                             | No       | Initial ban length                   |
 | `ban_max_length` | `str`                             | No       | Maximum exponential ban ceiling      |
@@ -133,16 +132,136 @@ app.add_middleware(
 
 ## Tests
 Used [Ratelimit Tester](https://github.com/cfunkz/ratelimit-tester) for testing rate-limit atomicity.
+Tested with 10 concurrent connections calling 10k requests each, no sleep timer. More testing in heavier environments is needed.
 
-## Screenshot
+```python
+===== FLOOD TEST RESULTS =====
+URL: http://localhost:8000/
+Workers: 10
+Requests per worker: 10000
+Total Requests: 100000
+Delay per request: 0.0 sec
 
-<img width="1070" height="571" alt="image" src="https://github.com/user-attachments/assets/4579f130-ac83-457b-8fd1-eda720ce8123" />
-<img width="1128" height="582" alt="image" src="https://github.com/user-attachments/assets/23752a35-5bff-4ed1-bd72-e90fe6c41e00" />
-<img width="448" height="745" alt="image" src="https://github.com/user-attachments/assets/1f8c415a-5baf-4635-9408-2ced64a75b0c" />
+--- IP 244.35.63.217 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.29 ms
+Latency min: 2 ms
+Latency max: 3152 ms
+
+--- IP 26.72.199.16 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.20 ms
+Latency min: 2 ms
+Latency max: 2842 ms
+
+--- IP 103.19.7.208 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.11 ms
+Latency min: 3 ms
+Latency max: 2515 ms
+
+--- IP 219.61.231.164 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.19 ms
+Latency min: 2 ms
+Latency max: 2246 ms
+
+--- IP 67.190.167.172 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.16 ms
+Latency min: 2 ms
+Latency max: 1905 ms
+
+--- IP 92.47.52.135 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.08 ms
+Latency min: 2 ms
+Latency max: 1635 ms
+
+--- IP 86.33.165.103 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.07 ms
+Latency min: 2 ms
+Latency max: 1316 ms
+
+--- IP 201.252.232.237 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.05 ms
+Latency min: 2 ms
+Latency max: 947 ms
+
+--- IP 153.64.165.188 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 7.01 ms
+Latency min: 2 ms
+Latency max: 653 ms
+
+--- IP 109.49.11.6 ---
+200: 200
+403: 9786
+429: 14
+Other: 0
+ERR: 0
+Latency avg: 6.95 ms
+Latency min: 2 ms
+Latency max: 401 ms
+```
+
+## Limitations
+- Requires Redis; in-memory backend not yet implemented.
+- Limited WebSocket support.
+- No built-in handling for X-Forwarded-For and X-Real-IP headers.
+- Tested in light environments; may need optimization for very high traffic.
+- Bans are IP-based; no user-specific banning yet.
 ---
 
-## Contributing
+## Screenshot
+<div align="center">
+    <img width="1070" height="571" alt="image" src="https://github.com/user-attachments/assets/4579f130-ac83-457b-8fd1-eda720ce8123" />
+    <img width="1128" height="582" alt="image" src="https://github.com/user-attachments/assets/23752a35-5bff-4ed1-bd72-e90fe6c41e00" />
+</div>
 
+## Contributing
 Contributions and forks are always welcome! Adapt, improve, or extend for your own needs.
 
-[![Buy Me a Coffee](https://cdn.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/cfunkz81112)
+<p align="center">
+  <a href="https://ko-fi.com/cfunkz81112">
+    <img src="https://cdn.ko-fi.com/cdn/kofi3.png?v=3" alt="Buy Me a Coffee" />
+  </a>
+</p>

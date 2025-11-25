@@ -3,12 +3,10 @@ from typing import Dict, Tuple, Optional, List
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.types import ASGIApp, Scope, Receive, Send
 import redis.asyncio as redis
-from .strategies import FixedWindowStrategy, SlidingWindowStrategy, MovingWindowStrategy
-import ipaddress
+from .strategies import FixedWindowStrategy, MovingWindowStrategy
 
 STRATEGY_MAP = {
     "fixed": FixedWindowStrategy,
-    "sliding": SlidingWindowStrategy,
     "moving": MovingWindowStrategy
 }
 
