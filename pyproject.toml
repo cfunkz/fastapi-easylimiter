@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-easylimiter"
+dynamic = ["version"]
+description = "Fast, atomic, single-round-trip Redis rate limiting middleware for FastAPI / any ASGI app."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+
+authors = [
+    { name = "cfunkz", email = "david@routezero.tech" }
+]
+
+keywords = [
+    "fastapi",
+    "rate-limit",
+    "ratelimiter",
+    "rate limiting",
+    "dos protection",
+    "ddos",
+    "security",
+    "middleware",
+    "asyncio",
+    "redis",
+    "fastapi middleware",
+    "abuse prevention",
+    "throttling",
+]
+
+classifiers = [
+    "Framework :: FastAPI",
+    "Framework :: AsyncIO",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+    "Topic :: Software Development :: Libraries",
+    "Intended Audience :: Developers",
+    "Development Status :: 5 - Production/Stable",
+]
+
+dependencies = ["redis>=5.0.1"]
+
+[project.optional-dependencies]
+fast = ["hiredis>=2"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "fastapi", "httpx", "uvicorn", "ruff", "fakeredis[lua]"]
+
+[project.urls]
+Homepage = "https://github.com/cfunkz/fastapi-easylimiter"
+Documentation = "https://github.com/cfunkz/fastapi-easylimiter"
+Source = "https://github.com/cfunkz/fastapi-easylimiter"
+Issues = "https://github.com/cfunkz/fastapi-easylimiter/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "fastapi_easylimiter.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["fastapi_easylimiter*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
